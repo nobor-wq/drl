@@ -146,7 +146,6 @@ class DARRL(Module):
             (action - perturbed_action) ** 2))
         ls = ((action_C + cost_P).detach().mean())
         ls = ls.requires_grad_()
-
         self.lam_optimizer.zero_grad()
         ls.backward()
         self.lam_optimizer.step()
