@@ -1,16 +1,3 @@
-import os
-from datetime import datetime
-import pandas as pd
-# 获取当前日期和时间
-current_time = datetime.now().strftime('%Y%m%d_%H%M')
-train_result_dir = os.getcwd() + '/results/'
-# 生成文件名并保存
-df = pd.DataFrame([])
-file_name = f"{train_result_dir}/train_data_{current_time}.csv"
-print(file_name)
-# df.to_csv(file_name, index=0)
-
-
 
 #
 # def attack(self, states):
