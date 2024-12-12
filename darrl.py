@@ -105,12 +105,12 @@ class DARRL(Module):
         return pythonic_mean([self.criterion(q, target) for q in qs])
 
     def update_action_cost(self, *action_loss_args):
-        critic_loss = self.action_cost_loss(*action_loss_args)
+        action_cost_loss = self.action_cost_loss(*action_loss_args)
         self.action_cost.optimizer.zero_grad()
-        critic_loss.backward()
+        action_cost_loss.backward()
         self.action_cost.optimizer.step()
-        update_ema(self.critic_target, self.critic, self.tau)
-        return critic_loss.detach()
+        update_ema(self.action_cost_target, self.action_cost, self.tau)
+        return action_cost_loss.detach()
 
     def actor_loss(self, states_al, perturbed_states):
         _, _, action = self.actor(states_al)
