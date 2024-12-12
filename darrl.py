@@ -1,19 +1,18 @@
 import copy
 import numpy as np
 import torch
-from pyglet.gl import Config
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
 from torch import nn
 from config import BaseConfig, Configurable
-from torch_util import device, Module, mlp, update_ema, freeze_module
+from torch_util import device, Module, update_ema, freeze_module
 from DARRLNetworkParams import QNetwork, PolicyNetwork, ActionCostNetwork
 import torch.nn.functional as F
 
 def pythonic_mean(x):
     return sum(x) / len(x)
 
-class DARRL(Module):
+class DARRL(Configurable, Module):
     class Config(BaseConfig):
         discount = 0.99
         deterministic_backup = False
@@ -117,12 +116,12 @@ class DARRL(Module):
         # action_C = self.log_lam1 * (self.eps1 - self.action_cost.mean(perturbed_states,perturbed_action))
         # cost_P = self.log_lam2 * (self.eps2 - torch.mean((action - perturbed_action) ** 2))
         # 2024-12-11 wq
-        action_C = self.log_lam1 * (torch.tensor(self.eps1, dtype=torch.float32, device=device) - self.action_cost.mean(
+        action_C = self.log_lam1 * (self.eps1 - self.action_cost.mean(
             perturbed_states, perturbed_action))
-        cost_P = self.log_lam2 * (torch.tensor(self.eps2, dtype=torch.float32, device=device) - torch.mean(
+        cost_P = self.log_lam2 * (self.eps2 - torch.mean(
             (action - perturbed_action) ** 2))
         ls = action_C + cost_P
-        actor_loss = torch.mean(actor_Q+ls)
+        actor_loss = torch.mean(-(actor_Q+ls))
         return [actor_loss]
 
     def update_actor(self, states_ua, perturbed_states):
@@ -141,10 +140,10 @@ class DARRL(Module):
         # action_C = self.log_lam1 * (self.eps1 - self.action_cost.mean(perturbed_states, perturbed_action))
         # cost_P = self.log_lam2 * (self.eps2 - torch.mean((action - perturbed_action) ** 2))
         # 2024-12-11 wq
-        action_C = self.log_lam1 * (torch.tensor(self.eps1, dtype=torch.float32, device=device) - self.action_cost.mean(perturbed_states, perturbed_action))
-        cost_P = self.log_lam2 * (torch.tensor(self.eps2, dtype=torch.float32, device=device) - torch.mean(
+        action_C = self.log_lam1 * (self.eps1 - self.action_cost.mean(perturbed_states, perturbed_action))
+        cost_P = self.log_lam2 * (self.eps2 - torch.mean(
             (action - perturbed_action) ** 2))
-        ls = ((action_C + cost_P).detach().mean())
+        ls = ((action_C + cost_P).mean())
         ls = ls.requires_grad_()
         self.lam_optimizer.zero_grad()
         ls.backward()
