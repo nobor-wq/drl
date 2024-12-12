@@ -1,19 +1,18 @@
 import copy
 import numpy as np
 import torch
-from pyglet.gl import Config
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
 from torch import nn
 from config import BaseConfig, Configurable
-from torch_util import device, Module, mlp, update_ema, freeze_module
+from torch_util import device, Module, update_ema, freeze_module
 from DARRLNetworkParams import QNetwork, PolicyNetwork, ActionCostNetwork
 import torch.nn.functional as F
 
 def pythonic_mean(x):
     return sum(x) / len(x)
 
-class DARRL(Module):
+class DARRL(Configurable, Module):
     class Config(BaseConfig):
         discount = 0.99
         deterministic_backup = False
@@ -28,8 +27,6 @@ class DARRL(Module):
         actor_lr = 1e-4
         acost_lr = 1e-4
         lam_lr = 1e-4
-        eps1 = 2
-        eps2 = 2
         gamma = 0.99
 
     def __init__(self, config, state_dim, action_dim, optimizer_factory=torch.optim.Adam):
@@ -43,8 +40,8 @@ class DARRL(Module):
         self.action_cost_target = copy.deepcopy(self.action_cost)
         freeze_module(self.action_cost_target)
         self.gamma = 0.99
-        self.eps1 = 2
-        self.eps2 = 2
+        self.eps1 = torch.tensor(2.0, dtype=torch.float32, device=device)
+        self.eps2 = torch.tensor(2.0, dtype=torch.float32, device=device)
         self.actor_lr = config.actor_lr
         self.lam_lr = config.lam_lr
         self.lam1 = torch.zeros(1, requires_grad=True, device=device)
@@ -119,12 +116,12 @@ class DARRL(Module):
         # action_C = self.log_lam1 * (self.eps1 - self.action_cost.mean(perturbed_states,perturbed_action))
         # cost_P = self.log_lam2 * (self.eps2 - torch.mean((action - perturbed_action) ** 2))
         # 2024-12-11 wq
-        action_C = self.log_lam1 * (torch.tensor(self.eps1, dtype=torch.float32, device=device) - self.action_cost.mean(
+        action_C = self.log_lam1 * (self.eps1 - self.action_cost.mean(
             perturbed_states, perturbed_action))
-        cost_P = self.log_lam2 * (torch.tensor(self.eps2, dtype=torch.float32, device=device) - torch.mean(
+        cost_P = self.log_lam2 * (self.eps2 - torch.mean(
             (action - perturbed_action) ** 2))
         ls = action_C + cost_P
-        actor_loss = torch.mean(actor_Q+ls)
+        actor_loss = torch.mean(-(actor_Q+ls))
         return [actor_loss]
 
     def update_actor(self, states_ua, perturbed_states):
@@ -143,12 +140,11 @@ class DARRL(Module):
         # action_C = self.log_lam1 * (self.eps1 - self.action_cost.mean(perturbed_states, perturbed_action))
         # cost_P = self.log_lam2 * (self.eps2 - torch.mean((action - perturbed_action) ** 2))
         # 2024-12-11 wq
-        action_C = self.log_lam1 * (torch.tensor(self.eps1, dtype=torch.float32, device=device) - self.action_cost.mean(perturbed_states, perturbed_action))
-        cost_P = self.log_lam2 * (torch.tensor(self.eps2, dtype=torch.float32, device=device) - torch.mean(
+        action_C = self.log_lam1 * (self.eps1 - self.action_cost.mean(perturbed_states, perturbed_action))
+        cost_P = self.log_lam2 * (self.eps2 - torch.mean(
             (action - perturbed_action) ** 2))
-        ls = ((action_C + cost_P).detach().mean())
+        ls = ((action_C + cost_P).mean())
         ls = ls.requires_grad_()
-
         self.lam_optimizer.zero_grad()
         ls.backward()
         self.lam_optimizer.step()
@@ -157,22 +153,19 @@ class DARRL(Module):
         # print("delta_m:shape", shape(delta_m), delta_m)
         mu, sigma = self.gp.predict(delta_m, return_std=True)
         # print(f"mu shape: {mu.shape}, sigma shape: {sigma.shape}")
-        mu = mu.flatten()
-        sigma = sigma.flatten()
+        mu = torch.tensor(mu.flatten(), device=device)
+        sigma = torch.tensor(sigma.flatten(), device=device)
         # print(f"mu shape: {mu.shape}, sigma shape: {sigma.shape}")
         return mu + 2 * sigma
 
     def attack(self, states_a):
         memory = []
-
         # 设置高斯分布的均值和标准差
         mean_m, std_m = 1.0, 0.1  # 乘法扰动的均值和标准差
         mean_a, std_a = 0.0, 0.1  # 加法扰动的均值和标准差
-
         # 初始化单个乘法扰动 Δm 和加法扰动 Δa
         delta_m0 = np.random.normal(mean_m, std_m)  # 单个值的乘法扰动
         delta_a0 = np.random.normal(mean_a, std_a)  # 单个值的加法扰动
-
         # 限制 Δm 在 [0.5, 1.5] 范围内
         delta_m0 = np.clip(delta_m0, 0.5, 1.5)
         # 限制 Δa 在 [-0.5, 0.5] 范围内
@@ -250,8 +243,3 @@ class DARRL(Module):
     def save_model(self, model_name, env_name):
         name = "./models/" + env_name + "/policy_v%d" % model_name
         torch.save(self.actor, "{}.pkl".format(name))
-
-
-
-
-
