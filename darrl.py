@@ -43,8 +43,8 @@ class DARRL(Module):
         self.action_cost_target = copy.deepcopy(self.action_cost)
         freeze_module(self.action_cost_target)
         self.gamma = 0.99
-        self.eps1 = 2
-        self.eps2 = 2
+        self.eps1 = torch.tensor(2.0, dtype=torch.float32, device=device)
+        self.eps2 = torch.tensor(2.0, dtype=torch.float32, device=device)
         self.actor_lr = config.actor_lr
         self.lam_lr = config.lam_lr
         self.lam1 = torch.zeros(1, requires_grad=True, device=device)
@@ -64,6 +64,7 @@ class DARRL(Module):
     def critic_loss(self, states_cl, action, next_states, reward, cost, done):
         target = self.compute_q_target(next_states, reward, done)
         return self.critic_loss_given_target(states_cl, action, target)
+
 
     def compute_q_target(self, next_states, reward, done):
         with torch.no_grad():
@@ -104,12 +105,12 @@ class DARRL(Module):
         return pythonic_mean([self.criterion(q, target) for q in qs])
 
     def update_action_cost(self, *action_loss_args):
-        critic_loss = self.action_cost_loss(*action_loss_args)
+        action_cost_loss = self.action_cost_loss(*action_loss_args)
         self.action_cost.optimizer.zero_grad()
-        critic_loss.backward()
+        action_cost_loss.backward()
         self.action_cost.optimizer.step()
-        update_ema(self.critic_target, self.critic, self.tau)
-        return critic_loss.detach()
+        update_ema(self.action_cost_target, self.action_cost, self.tau)
+        return action_cost_loss.detach()
 
     def actor_loss(self, states_al, perturbed_states):
         _, _, action = self.actor(states_al)
@@ -249,8 +250,3 @@ class DARRL(Module):
     def save_model(self, model_name, env_name):
         name = "./models/" + env_name + "/policy_v%d" % model_name
         torch.save(self.actor, "{}.pkl".format(name))
-
-
-
-
-
