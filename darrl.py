@@ -155,8 +155,8 @@ class DARRL(Module):
         # print("delta_m:shape", shape(delta_m), delta_m)
         mu, sigma = self.gp.predict(delta_m, return_std=True)
         # print(f"mu shape: {mu.shape}, sigma shape: {sigma.shape}")
-        mu = mu.flatten()
-        sigma = sigma.flatten()
+        mu = torch.tensor(mu.flatten(), device=device)
+        sigma = torch.tensor(sigma.flatten(), device=device)
         # print(f"mu shape: {mu.shape}, sigma shape: {sigma.shape}")
         return mu + 2 * sigma
 
