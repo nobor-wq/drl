@@ -28,8 +28,6 @@ class DARRL(Module):
         actor_lr = 1e-4
         acost_lr = 1e-4
         lam_lr = 1e-4
-        eps1 = 2
-        eps2 = 2
         gamma = 0.99
 
     def __init__(self, config, state_dim, action_dim, optimizer_factory=torch.optim.Adam):
