@@ -164,7 +164,6 @@ class DARRL(Module):
         # 设置高斯分布的均值和标准差
         mean_m, std_m = 1.0, 0.1  # 乘法扰动的均值和标准差
         mean_a, std_a = 0.0, 0.1  # 加法扰动的均值和标准差
-
         # 初始化单个乘法扰动 Δm 和加法扰动 Δa
         delta_m0 = np.random.normal(mean_m, std_m)  # 单个值的乘法扰动
         delta_a0 = np.random.normal(mean_a, std_a)  # 单个值的加法扰动
