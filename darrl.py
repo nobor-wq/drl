@@ -167,7 +167,6 @@ class DARRL(Module):
         # 初始化单个乘法扰动 Δm 和加法扰动 Δa
         delta_m0 = np.random.normal(mean_m, std_m)  # 单个值的乘法扰动
         delta_a0 = np.random.normal(mean_a, std_a)  # 单个值的加法扰动
-
         # 限制 Δm 在 [0.5, 1.5] 范围内
         delta_m0 = np.clip(delta_m0, 0.5, 1.5)
         # 限制 Δa 在 [-0.5, 0.5] 范围内
