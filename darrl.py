@@ -161,7 +161,6 @@ class DARRL(Module):
 
     def attack(self, states_a):
         memory = []
-
         # 设置高斯分布的均值和标准差
         mean_m, std_m = 1.0, 0.1  # 乘法扰动的均值和标准差
         mean_a, std_a = 0.0, 0.1  # 加法扰动的均值和标准差
