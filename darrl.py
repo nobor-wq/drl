@@ -65,6 +65,7 @@ class DARRL(Module):
         target = self.compute_q_target(next_states, reward, done)
         return self.critic_loss_given_target(states_cl, action, target)
 
+
     def compute_q_target(self, next_states, reward, done):
         with torch.no_grad():
             _, _, next_action = self.actor(next_states)
