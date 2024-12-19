@@ -11,6 +11,7 @@ class DR(Configurable, Module):
         safe_horizon = 100
         buffer_min = 5
         buffer_max = 10**6
+        solver_updates_per_step = 8
 
     def __init__(self, config, env, state_dim, action_dim):
         Configurable.__init__(self, config)
@@ -37,25 +38,26 @@ class DR(Configurable, Module):
         return DummyModuleWrapper(buffer)
 
     def update_solver(self):
-        solver = self.solver
-        # samples = self.replay_buffer.sample(solver.batch_size)
-        solver.update(self.replay_buffer)
-        # solver.update_actor(samples[0])
+        for _ in range(self.solver_updates_per_step):
+            solver = self.solver
+            solver.update(self.replay_buffer)
+
 
     def interaction(self, max_episode_steps, score, v, v_epi, speed_range, max_a, n_epi, warm_up=10, scale=10.0):
-        episode = self._create_buffer(max_episode_steps)
+        # episode = self._create_buffer(max_episode_steps)
         state = self.env.reset()
 
         for t in range(max_episode_steps):
-            print("时间步: ",t)
+            # print("时间步: ",t)
             if n_epi > warm_up:
                 self.update_solver()
             mu, _, pi = self.actor(torch.tensor(state))
             action = max_a*pi.item()
-
             reward, next_state, done, r_, cost, info = self.env.step(action)
-            print("reward:",reward)
-            for buffer in [episode, self.replay_buffer]:
+            # 2024-12-12 wq 碰撞成本
+
+            # for buffer in [episode, self.replay_buffer]:
+            for buffer in [self.replay_buffer]:
                 buffer.append(states=torch.tensor(state), actions=pi.detach(), next_states=torch.tensor(next_state), rewards=reward/scale, costs=cost, dones=done)
 
             state = next_state

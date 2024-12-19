@@ -1,6 +1,5 @@
 import gym
 import numpy as np
-import torch
 import argparse
 import random
 import matplotlib.pyplot as plt
@@ -9,20 +8,24 @@ from dr import DR
 import os
 import pandas as pd
 from datetime import datetime
-os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+import torch
+# os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
+
 
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--env_name', default="TrafficEnv3-v0", help='name of the environment to run')
-parser.add_argument('--seed', default=0)
-parser.add_argument('--train_step', default=20)
-parser.add_argument('--T_horizon', default=15)
+parser.add_argument('--seed', default=1)
+parser.add_argument('--train_step', default=100)
+parser.add_argument('--T_horizon', default=30)
 parser.add_argument('--print_interval', default=10)
 parser.add_argument('--speed_range', default=15.0, help='Maximum speed')
 parser.add_argument('--max_a', default=7.6, help='Maximum Acceleration')
 parser.add_argument('--state_dim', default=26)
 parser.add_argument('--action_dim', default=1)
 args = parser.parse_args()
+
 
 # Set environment
 env = gym.make(args.env_name)
@@ -63,9 +66,11 @@ def train():
     sn_epi = []
 
     for n_epi in range(args.train_step):
-        print("训练episode: ", n_epi)
+
         score, v, v_epi, xa, ya, done = alg.interaction(args.T_horizon, score, v, v_epi, args.speed_range, args.max_a, n_epi)
 
+        print("训练episode:",n_epi,"奖励:",score)
+        # 2024-12-12 wq cn碰撞的次数，sn成功的次数
         if done is True:
             cn += 1
 
@@ -106,10 +111,18 @@ def train():
     train_res = f"{train_result_dir}/train_data_{current_time}.csv"
     df.to_csv(train_res, index=0)
 
-    plt.plot(episode, total_reward)
-    plt.xlabel('episode')
-    plt.ylabel('total_reward')
-    plt.show()
+    #plt.plot(episode, total_reward)
+    #plt.xlabel('episode')
+    #plt.ylabel('total_reward')
+    ## 2024-12-13 wq  创建保存图片的目录（如果不存在）
+    #image_dir = os.path.join(train_result_dir, "images")
+    #os.makedirs(image_dir, exist_ok=True)
+
+    ## 2024-12-13 wq
+    # 保存图片，文件名加上当前日期和时间
+    #image_path = os.path.join(image_dir, f"reward_plot_{current_time}.png")
+    #plt.savefig(image_path)
+
 
     env.close()
 
