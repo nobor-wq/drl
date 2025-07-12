@@ -1,10 +1,11 @@
 import numpy as np
 import torch
 import torch.nn as nn
+from utils import get_config
 
-
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
+parser = get_config()
+args = parser.parse_args()
+device = torch.device(args.device)
 
 def torchify(x, double_to_float=True, int_to_long=True, to_device=True):
     if torch.is_tensor(x):

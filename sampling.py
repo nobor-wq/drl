@@ -3,7 +3,8 @@ from torch_util import device, Module, random_indices
 
 
 class SampleBuffer(Module):
-    COMPONENT_NAMES = ('states', 'actions', 'next_states', 'rewards', 'costs', 'dones')
+    # COMPONENT_NAMES = ('states', 'adv_states', 'actions', 'adv_actions', 'next_states', 'rewards',  'dones')
+    COMPONENT_NAMES = ('states' , 'adv_states', 'actions', 'adv_actions', 'next_states', 'rewards', 'costs', 'dones')
 
     def __init__(self, state_dim, action_dim, capacity, discrete_actions=False,
                  device=device):
@@ -27,7 +28,9 @@ class SampleBuffer(Module):
 
         components = (
             ('states', torch.float, [state_dim]),
+            ('adv_states', torch.float, [state_dim]),
             ('actions', action_dtype, action_shape),
+            ('adv_actions', action_dtype, action_shape),
             ('next_states', torch.float, [state_dim]),
             ('rewards', torch.float, []),
             ('costs', torch.float, []),
