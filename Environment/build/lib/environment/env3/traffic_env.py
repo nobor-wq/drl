@@ -1,6 +1,6 @@
 from __future__ import absolute_import
 from __future__ import print_function
-
+from gymnasium import spaces
 import gym
 import numpy as np
 import os
@@ -32,10 +32,13 @@ if gui:
 else:
     sumoBinary = checkBinary('sumo')
 # config_path = os.path.dirname(__file__)+"/../../../Environment/environment/env3/Intersection_3.sumocfg"  # Unprotected left turn in mixed traffic
-config_path = r"/Environment\environment\env3\Intersection_3.sumocfg"
+config_path = r"E:\CodePython\GraduationProject_NoAttack\Environment\environment\env3\Intersection_3.sumocfg"
+
+LIBSUMO = "LIBSUMO_AS_TRACI" in os.environ
 
 
 class Traffic_Env(gym.Env):
+    CONNECTION_LABEL = 0  # For traci multi-client support
     def __init__(self):
         self.state_dim = 26
         self.action_dim = 1
@@ -44,6 +47,17 @@ class Traffic_Env(gym.Env):
         self.max_angle = 360.0
         self.AutoCarID = 'Auto'
         self.reset_times = 0
+
+        self.action_space = spaces.Box(-1.0, 1.0, shape=(1,), dtype=np.float32)
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(26,), dtype=np.float32)
+
+        # 定义动作空间（例如离散动作空间，如果是连续动作，使用 spaces.Box）
+        # self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
+
+
+        self.label = str(Traffic_Env.CONNECTION_LABEL)
+        Traffic_Env.CONNECTION_LABEL += 1
+        self.sumo_seed = 0
 
     def raw_obs(self, vehicle_params):
         obs = []
@@ -164,21 +178,28 @@ class Traffic_Env(gym.Env):
         reward_cost, collision_value, reward, cost = self.get_reward_a(new_vehicle_params)
         next_state, info = self.obs_to_state(new_vehicle_params)
 
-        return reward_cost, next_state, collision_value, reward, cost, info
+        return reward_cost, next_state, collision_value, cost, info
 
-    def reset(self):
-        dom = xml.dom.minidom.parse(config_path)
-        root = dom.documentElement
-        random_seed_element = root.getElementsByTagName("seed")[0]
+    def reset(self, seed=None):
+        # dom = xml.dom.minidom.parse(config_path)
+        # root = dom.documentElement
+        # random_seed_element = root.getElementsByTagName("seed")[0]
 
+        # if self.reset_times % 2 == 0:
+        #     # 2024-12-20 wq 将reset_times转成字符串
+        #     random_seed = "%d" % self.reset_times
+        #     random_seed_element.setAttribute("value", random_seed)
+        #
+        # with open(config_path, "w") as file:
+        #     dom.writexml(file)
+        #
+        # traci.load(["-c", config_path])
+        # 2024-12-20 wq
+        # self.sumo_seed = 'random'
         if self.reset_times % 2 == 0:
-            random_seed = "%d" % self.reset_times
-            random_seed_element.setAttribute("value", random_seed)
+            self.sumo_seed = "%d" % self.reset_times
+        self.start()
 
-        with open(config_path, "w") as file:
-            dom.writexml(file)
-
-        traci.load(["-c", config_path])
         print('Resetting the layout!!!!!!', self.reset_times)
         self.reset_times += 1
 
@@ -195,16 +216,29 @@ class Traffic_Env(gym.Env):
                 traci.vehicle.setSpeedMode(VehId, 22)
                 traci.vehicle.setLaneChangeMode(VehId, 0)  # Disable automatic lane changing
 
-        initial_state, _ = self.obs_to_state(VehicleIds)
+        initial_state, info = self.obs_to_state(VehicleIds)
 
-        return initial_state
+        return initial_state, info
 
     def close(self):
         traci.close()
 
     def start(self, gui=False):
         sumoBinary = checkBinary('sumo-gui') if gui else checkBinary('sumo')
-        traci.start([sumoBinary, "-c", config_path, "--collision.check-junctions", "true"])
+        # traci.start([sumoBinary, "-c", config_path, "--collision.check-junctions", "true"])
+        sumo_cmd = [sumoBinary, "-c", config_path, "--collision.check-junctions", "true"]
 
+        # 在启动连接之前，确保关闭任何现有的连接
+        if traci.isLoaded():
+            traci.close()
+
+        if self.sumo_seed == "random":
+            sumo_cmd.append("--random")
+        else:
+            sumo_cmd.extend(["--seed", str(self.sumo_seed)])
+        if LIBSUMO:
+            traci.start(sumo_cmd)
+        else:
+            traci.start(sumo_cmd, label=self.label)
 
 

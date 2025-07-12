@@ -1,8 +1,8 @@
 <?xml version="1.0" ?><configuration>
 
     <input>
-        <net-file value="Intersection_3.net.xml"/>
-        <route-files value="Intersection_3.rou.xml"/>
+        <net-file value="On-Ramp_merging.net.xml"/>
+        <route-files value="On-Ramp_merging.rou.xml"/>
 		<collision.action value="remove"/>
     </input>
 
@@ -20,7 +20,7 @@
     </gui_only>
     <random_numberType>
         <random value="false"/>
-        <seed value="98"/>
+        <seed value="15016"/>
     </random_numberType>
     <processing>
         <lanechange.overtake-right value="false"/>

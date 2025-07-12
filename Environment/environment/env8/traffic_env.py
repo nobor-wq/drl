@@ -1,28 +1,28 @@
 from __future__ import absolute_import
 from __future__ import print_function
-from gymnasium import spaces
-import gym
+
+import gymnasium as gym
 import numpy as np
 import os
 import sys
 import math
 import xml.dom.minidom
 
+import torch
+from gymnasium import spaces
 
 # we need to import python modules from the $SUMO_HOME/tools directory
-# try:
-#     sys.path.append(os.path.join(os.path.dirname(
-#         __file__), '..', '..', '..', '..', "tools"))  # tutorial in tests
-#     sys.path.append(os.path.join(os.environ.get("SUMO_HOME", os.path.join(
-#         os.path.dirname(__file__), "..", "..", "..")), "tools"))  # tutorial in docs
-#     from sumolib import checkBinary
-# except ImportError:
-#     sys.exit(
-#         "please declare environment variable 'SUMO_HOME' as the root directory of your sumo installation (it should contain folders 'bin', 'tools' and 'docs')")
+try:
+    sys.path.append(os.path.join(os.path.dirname(
+        __file__), '..', '..', '..', '..', "tools"))  # tutorial in tests
+    sys.path.append(os.path.join(os.environ.get("SUMO_HOME", os.path.join(
+        os.path.dirname(__file__), "..", "..", "..")), "tools"))  # tutorial in docs
+    from sumolib import checkBinary
+except ImportError:
+    sys.exit(
+        "please declare environment variable 'SUMO_HOME' as the root directory of your sumo installation (it should contain folders 'bin', 'tools' and 'docs')")
 
 # 更新 sys.path，加入 tools 路径
-sys.path.append(r"D:\nobor\software_study\SUMO\tools")
-from sumolib import checkBinary
 
 import traci
 
@@ -31,8 +31,8 @@ if gui:
     sumoBinary = checkBinary('sumo-gui')
 else:
     sumoBinary = checkBinary('sumo')
-# config_path = os.path.dirname(__file__)+"/../../../Environment/environment/env3/Intersection_3.sumocfg"  # Unprotected left turn in mixed traffic
-config_path = r"E:\CodePython\GraduationProject_Attack\Environment\environment\env3\Intersection_3.sumocfg"
+config_path = os.path.dirname(__file__)+"/../../../Environment/environment/env8/On-Ramp_merging.sumocfg"  # Unprotected left turn in mixed traffic
+# config_path = r"E:\CodePython\GraduationProject_NoAttack\Environment\environment\env8\On-Ramp_merging.sumocfg"
 
 LIBSUMO = "LIBSUMO_AS_TRACI" in os.environ
 
@@ -47,17 +47,15 @@ class Traffic_Env(gym.Env):
         self.max_angle = 360.0
         self.AutoCarID = 'Auto'
         self.reset_times = 0
-
-        self.action_space = spaces.Box(-1.0, 1.0, shape=(1,), dtype=np.float32)
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(26,), dtype=np.float32)
-
-        # 定义动作空间（例如离散动作空间，如果是连续动作，使用 spaces.Box）
-        # self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
-
+        self.max_acc = 7.6
 
         self.label = str(Traffic_Env.CONNECTION_LABEL)
         Traffic_Env.CONNECTION_LABEL += 1
         self.sumo_seed = 0
+
+        self.action_space = spaces.Box(-1.0, 1.0, shape=(1,), dtype=np.float32)
+        # define dims of state space
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(26,), dtype=np.float32)
 
     def raw_obs(self, vehicle_params):
         obs = []
@@ -113,12 +111,12 @@ class Traffic_Env(gym.Env):
 
             obs.append(traci.vehicle.getSpeed(self.AutoCarID))
             obs.append(traci.vehicle.getAngle(self.AutoCarID))
-            info = [ego_veh_x, ego_veh_y]
+            info = {'x_position': ego_veh_x, 'y_position': ego_veh_y, 'reward': 0.0, 'cost': 0.0, 'flag': False}
         else:
             obs = [self.maxDistance, 0.0, 0.0, 0.0, self.maxDistance, 0.0, 0.0, 0.0,self.maxDistance, 0.0, 0.0, 0.0,\
                    self.maxDistance, 0.0, 0.0, 0.0,self.maxDistance, 0.0, 0.0, 0.0, self.maxDistance, 0.0, 0.0, 0.0,\
                    0.0, 0.0]
-            info = [0.0, 0.0]
+            info = {'x_position': 0.0, 'y_position': 0.0, 'reward': 0.0, 'cost': 0.0, 'flag': False}
 
         return obs, info
 
@@ -148,7 +146,7 @@ class Traffic_Env(gym.Env):
         dis_sides = [dis_fr, dis_fl, dis_rl, dis_rr]
 
         # efficiency
-        reward = v_ego/10.0
+        reward = v_ego/self.maxSpeed
 
         # safety
         collision_value = self.check_collision(dis_f, dis_r, dis_sides, vehicle_params)
@@ -170,21 +168,33 @@ class Traffic_Env(gym.Env):
         return collision_value
 
     def step(self, action_a):
-        traci.vehicle.setSpeed(self.AutoCarID, max(traci.vehicle.getSpeed(self.AutoCarID) + action_a, 0.001))
+
+        action = self.max_acc * action_a
+        if isinstance(action, np.ndarray):
+            # 假设 action 是一个标量数组，比如 array([0])，用 item() 取标量
+            action_val = action.item()
+        elif isinstance(action, torch.Tensor):
+            action_val = action.cpu().item()
+
+        speed = float(traci.vehicle.getSpeed(self.AutoCarID) + action_val)
+        traci.vehicle.setSpeed(self.AutoCarID, max(speed, 0.001))
+        # traci.vehicle.setSpeed(self.AutoCarID, max(traci.vehicle.getSpeed(self.AutoCarID) + action_a, 0.001))
         traci.simulationStep()
 
         # Get the new vehicle parameters
         new_vehicle_params = traci.vehicle.getIDList()
         reward_cost, collision_value, reward, cost = self.get_reward_a(new_vehicle_params)
         next_state, info = self.obs_to_state(new_vehicle_params)
+        info['reward'] = reward
+        info['cost'] = cost
 
-        return reward_cost, next_state, collision_value, cost, info
+        return  np.array(next_state, dtype=np.float32), reward_cost, collision_value, False, info
 
-    def reset(self, seed=None):
+    def reset(self, seed=None, options=None):
         # dom = xml.dom.minidom.parse(config_path)
         # root = dom.documentElement
         # random_seed_element = root.getElementsByTagName("seed")[0]
-
+        #
         # if self.reset_times % 2 == 0:
         #     # 2024-12-20 wq 将reset_times转成字符串
         #     random_seed = "%d" % self.reset_times
@@ -195,9 +205,11 @@ class Traffic_Env(gym.Env):
         #
         # traci.load(["-c", config_path])
         # 2024-12-20 wq
-        # self.sumo_seed = 'random'
-        if self.reset_times % 2 == 0:
-            self.sumo_seed = "%d" % self.reset_times
+        if options is None:
+            if self.reset_times % 2 == 0:
+                self.sumo_seed = "%d" % self.reset_times
+        else:
+            self.sumo_seed = 'random'
         self.start()
 
         print('Resetting the layout!!!!!!', self.reset_times)
@@ -218,19 +230,20 @@ class Traffic_Env(gym.Env):
 
         initial_state, info = self.obs_to_state(VehicleIds)
 
-        return initial_state, info
+        return np.array(initial_state, dtype=np.float32), info
 
     def close(self):
         traci.close()
 
-    def start(self, gui=False):
+    def start(self, gui=True):
         sumoBinary = checkBinary('sumo-gui') if gui else checkBinary('sumo')
         # traci.start([sumoBinary, "-c", config_path, "--collision.check-junctions", "true"])
         sumo_cmd = [sumoBinary, "-c", config_path, "--collision.check-junctions", "true"]
 
-        # 在启动连接之前，确保关闭任何现有的连接
-        if traci.isLoaded():
+        try:
             traci.close()
+        except:
+            pass  # 如果没有活跃的连接，忽略异常
 
         if self.sumo_seed == "random":
             sumo_cmd.append("--random")
