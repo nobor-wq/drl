@@ -32,13 +32,13 @@ parser.add_argument('--T_horizon', type=int, default=30, help='number of trainin
 
 
 
-parser.add_argument('--adv_algo', default="drl", help='training adv algorithm')
-parser.add_argument('--algo', default="drl", help='training algorithm')
+parser.add_argument('--adv_algo', default="PPO", help='training adv algorithm')
+parser.add_argument('--algo', default="PPO", help='training algorithm')
 parser.add_argument('--env_name', default="TrafficEnv3-v1", help='name of the environment to run')
-parser.add_argument('--attack', type=bool, default=False, help='control n_rollout_steps, for PPO')
-parser.add_argument('--algo_name', default="defender_v2349_20250728_1146_4_7.pth", help='defender algorithm')
+parser.add_argument('--attack', type=bool, default=True, help='control n_rollout_steps, for PPO')
+parser.add_argument('--algo_name', default="defender_v256_20250804_1502.pth", help='defender algorithm')
 
-parser.add_argument('--adv_algo_name', default="attacker_v2266_20250728_1120_3_7.pth", help='attack algorithm')
+parser.add_argument('--adv_algo_name', default="attacker_v214_20250804_2032.pth", help='attack algorithm')
 parser.add_argument('--seed', type=int, default=5, help='random seed for network')
 
 args = parser.parse_args()

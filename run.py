@@ -1,16 +1,18 @@
-import gymnasium as  gym
-import numpy as np
-import random
-import Environment.environment
 import os
-import pandas as pd
-import datetime
-import torch
 import drl
-from utils import get_config
-from DARRLNetworkParams import ActorNet
+import torch
+import random
 import swanlab
+import datetime
+import numpy as np
+import pandas as pd
 from FGSM import *
+import gymnasium as gym
+from utils import get_config
+import Environment.environment
+from stable_baselines3 import PPO
+from DARRLNetworkParams import ActorNet
+
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
@@ -28,12 +30,13 @@ if args.lag:
     args.addition_msg = "lag"
 
 if args.swanlab:
-    run_name = f"{args.env_name}-{args.algo}-{args.addition_msg}"
+    run_name = f"{args.env_name}-{args.algo}-{args.seed}-{args.method}-{args.epsilon}-{args.addition_msg}"
     run = swanlab.init(project="run_result", name=run_name, config=args)
 
 
 # Set environment
 env = gym.make(args.env_name)
+
 
 random.seed(args.seed)  # 设置 Python 随机种子
 np.random.seed(args.seed)  # 设置 NumPy 随机种子
@@ -54,6 +57,10 @@ if args.attacker:
         agent_model = ActorNet(state_dim=26, action_dim=1).to(device)
         agent_model.load_state_dict(torch.load(model_path_drl, map_location=device))
         agent_model.eval()
+    elif args.algo == "PPO":
+        model_path_ppo = os.path.join(prefix, "lunar_baseline")
+        agent_model = PPO.load(model_path_ppo, device=device)
+
 
 
 current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H%M")
@@ -88,6 +95,8 @@ def train():
     sn = 0.0
     sn_epi = []
 
+    attacker_flag = False
+
 
     for n_epi in range(args.train_step):
         state, _ = env.reset()
@@ -96,48 +105,85 @@ def train():
             state_tensor = torch.tensor(state, dtype=torch.float32, device=device)
             step += 1
             if n_epi > 10:
-               model_t.update()
+                if args.frequency:
+                    if (n_epi + 1) % 200 < 100:
+                        attacker_flag = False
+                    else:
+                        attacker_flag = True
+                model_t.update(attacker_flag)
 
             if args.attacker:
                 with torch.no_grad():
-                    _, _, action_adv = model_t.actor_adv(state_tensor)
+                    _, _, action_adv  = model_t.actor_adv(state_tensor)
                 if args.algo == "drl":
                     state_adv = FGSM_vdarrl(action_adv, agent_model,
                                             state_tensor, algo=args.algo,
-                                            epsilon=args.episode, attack_option=args.attack_option)
-                    ego_action_attack, _, _ = agent_model(state_adv)
-                    action = ego_action_attack
+                                            epsilon=args.epsilon, attack_option=args.attack_option)
+                    with torch.no_grad():
+                        ego_action_attack, _, _ = agent_model(state_adv)
+                        action = ego_action_attack
+                elif args.algo == "PPO" or args.algo == "SAC":
+                    state_adv = FGSM_v2(action_adv, agent_model, state_tensor,
+                                        epsilon=args.epsilon)
+                    with torch.no_grad():
+                        ego_action_attack, _ = agent_model.predict(state_adv.cpu(), deterministic=True)
+                        action = torch.from_numpy(ego_action_attack).to(state_tensor.device)  # 或者 .cuda()
+
             else:
-                with torch.no_grad():
-                    _, _, action_before_attack = model_t.actor(state_tensor)
-                    _, _, action_adv = model_t.actor_adv(state_tensor)
+                if args.get:
+                    with torch.no_grad():
+                        _, _, action = model_t.actor(state_tensor)
+                else:
+                    with torch.no_grad():
+                        # _, _, action_before_attack = model_t.actor(state_tensor)
+                        _, _, action_adv  = model_t.actor_adv(state_tensor)
 
-                state_adv = FGSM_vdarrl(action_adv, model_t.actor,
-                            state_tensor, algo=args.algo,
-                            epsilon=args.episode, attack_option=args.attack_option)
+                    state_adv = FGSM_vdarrl(action_adv, model_t.actor,
+                                state_tensor, algo=args.algo,
+                                epsilon=args.epsilon, attack_option=args.attack_option)
 
-                with torch.no_grad():
-                    _, _, ego_action_attack = model_t.actor(state_adv)
-                    action = ego_action_attack
-
-                swanlab.log({
-                    "train/action_before_attack": round(action_before_attack.item(), 2),
-                    "train/attack_action": round(action_adv.item(), 2),
-                    "train/action_after_attack": round(action.item(), 2)
-                })
+                    with torch.no_grad():
+                        _, _, ego_action_attack = model_t.actor(state_adv)
+                        action = ego_action_attack
 
             next_state, reward, done, _, info = env.step(action)
 
-            model_t.replay_buffer.add(
-                state=state_tensor,
-                state_adv = state_adv,
-                action=action,
-                action_adv = action_adv,
-                reward=reward,
-                next_state=torch.tensor(next_state).to(device),
-                cost=info['cost'],
-                done=done
-            )
+            if args.replay:
+                if done:
+                    model_t.replay_buffer_done.add(
+                        state=state_tensor,
+                        state_adv=state_adv,
+                        action=action,
+                        action_adv=action_adv,
+                        reward=reward ,
+                        next_state=torch.tensor(next_state).to(device),
+                        done=done,
+                        cost=info['cost']
+
+                    )
+
+            if args.get:
+                model_t.replay_buffer.add(
+                    state=state_tensor,
+                    state_adv=state_tensor,
+                    action=action,
+                    action_adv=action,
+                    reward=reward,
+                    next_state=torch.tensor(next_state).to(device),
+                    done=done,
+                    cost=info['cost']
+                )
+            else:
+                model_t.replay_buffer.add(
+                    state=state_tensor.detach(),
+                    state_adv=state_adv.detach(),
+                    action=action.detach(),
+                    action_adv = action_adv.detach(),
+                    reward=reward,
+                    next_state=torch.tensor(next_state).to(device).detach(),
+                    done=done,
+                    cost=info['cost']
+                )
 
             state = next_state
             score += reward
@@ -155,7 +201,7 @@ def train():
                 model_t.save_model(int(score), model_dir_base)
                 print("#The attacker models are saved!#", n_epi + 1)
         else:
-            if (n_epi + 1) % 100 == 0 and (n_epi + 1) >= 2000:
+            if (n_epi + 1) % 100 == 0 and (n_epi + 1) >= int(args.train_step * 0.7) :
                 model_t.save_model(int(score), model_dir_base)
                 print("#The defender models are saved!#", n_epi + 1)
 
