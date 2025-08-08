@@ -36,10 +36,10 @@ parser.add_argument('--adv_algo', default="PPO", help='training adv algorithm')
 parser.add_argument('--algo', default="PPO", help='training algorithm')
 parser.add_argument('--env_name', default="TrafficEnv3-v1", help='name of the environment to run')
 parser.add_argument('--attack', type=bool, default=True, help='control n_rollout_steps, for PPO')
-parser.add_argument('--algo_name', default="defender_v256_20250804_1502.pth", help='defender algorithm')
+parser.add_argument('--algo_name', default="defender_v269_20250808_1237_4_81_005.pth", help='defender algorithm')
 
-parser.add_argument('--adv_algo_name', default="attacker_v214_20250804_2032.pth", help='attack algorithm')
-parser.add_argument('--seed', type=int, default=5, help='random seed for network')
+parser.add_argument('--adv_algo_name', default="attacker_v121_20250808_1627_005.pth", help='attack algorithm')
+parser.add_argument('--seed', type=int, default=1, help='random seed for network')
 
 args = parser.parse_args()
 
@@ -76,7 +76,7 @@ if args.attack:
         # advmodel_path = "./logs/adv_eval/" + os.path.join(args.adv_algo, args.env_name, args.algo, args.addition_msg, 'lunar')
         adv_model_path = os.path.join(args.adv_path, args.env_name, args.adv_algo, 'attacker', args.adv_algo_name)
 
-    model = ActorNet(state_dim=26, action_dim=1).to(device)
+    model = ActorNet_adv(state_dim=26, action_dim=1).to(device)
     model.load_state_dict(torch.load(adv_model_path, map_location=device))
     model.eval()
 
@@ -166,7 +166,7 @@ for episode in range(args.train_step):
                 actions_tensor = actions
 
             # actions_tensor = th.tensor(actions, device=obs_tensor.device)  # 确保在同一设备上
-            adv_actions, _,  _= model(obs_tensor.cpu())
+            adv_actions, _, _  = model(obs_tensor.cpu())
             print(episode_steps, 'attack', 'Victim action is', actions, 'adv actions is', adv_actions)
 
             if args.attack_method == 'fgsm':

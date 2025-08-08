@@ -451,7 +451,7 @@ class DRL:
             os.makedirs(attacker_path, exist_ok=True)
             name_att = f"attacker_v{model_name}_{timestamp}.pth"
             save_path_att = os.path.join(attacker_path, name_att)
-            torch.save(self.actor.state_dict(), save_path_att)
+            torch.save(self.actor_adv.state_dict(), save_path_att)
 
             # 保存防御者
             defender_path = os.path.join(modelSavedPath, "defender")
@@ -466,7 +466,7 @@ class DRL:
             os.makedirs(attacker_path, exist_ok=True)
             name_att = f"attacker_v{model_name}_{timestamp}.pth"
             save_path_att = os.path.join(attacker_path, name_att)
-            torch.save(self.actor.state_dict(), save_path_att)
+            torch.save(self.actor_adv.state_dict(), save_path_att)
 
         else:
             # 都没有参数时只保存防御者
