@@ -1,14 +1,10 @@
 import torch
 import torch.nn as nn
-from utils import get_config
 
-parser = get_config()
-args = parser.parse_args()
-
-def FGSM_v2(adv_action, victim_agent, last_state, epsilon=0.03,
-                 num_iterations=50):
+def FGSM_v2(adv_action, victim_agent, last_state, epsilon=0.01,
+                 device="cpu", num_iterations=50):
     alpha = epsilon/num_iterations
-    device = args.device
+    device = torch.device(device)
 
 
     low = torch.zeros_like(last_state, device=device)
@@ -50,9 +46,9 @@ def FGSM_v2(adv_action, victim_agent, last_state, epsilon=0.03,
         last_state = torch.clamp(last_state + alpha * last_state.grad.sign(),min=clamp_min, max=clamp_max).detach_()
     return last_state
 
-def FGSM_vdarrl(adv_action, victim_agent, last_state, algo, epsilon=0.03, attack_option="a2",
-                  num_iterations=50):
-    device = args.device
+def FGSM_vdarrl(adv_action, victim_agent, last_state, algo, epsilon=0.01,
+                device="cpu", attack_option="a2", num_iterations=50):
+    device = torch.device(device)
     alpha = epsilon/num_iterations
 
     if attack_option == "a1":

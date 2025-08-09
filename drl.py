@@ -180,7 +180,8 @@ class DRL:
                 action_adv, _, _ = self.actor_adv(states)
             states_fgsm = FGSM_vdarrl(action_adv, self.actor,
                                     states, algo=args.algo,
-                                    epsilon=args.epsilon, attack_option=args.attack_option)
+                                    epsilon=args.epsilon, device=args.device,
+                                      attack_option=args.attack_option)
             mu_adv, std, pi_adv = self.actor(states_fgsm)
 
         mu, std, pi = self.actor(states_adv)
