@@ -45,23 +45,6 @@ args = parser.parse_args()
 
 device = torch.device(args.device)
 
-random.seed(args.seed)  # 设置 Python 随机种子
-np.random.seed(args.seed)  # 设置 NumPy 随机种子
-torch.manual_seed(args.seed)  # 设置 CPU 随机种子
-if torch.cuda.is_available():
-    torch.cuda.manual_seed(args.seed)  # 设置 CUDA 随机种子
-    torch.cuda.manual_seed_all(args.seed)  # 设置所有 GPU 随机种子
-torch.backends.cudnn.deterministic = True  # 确保 CUDA 的确定性
-torch.backends.cudnn.benchmark = False  # 禁用 CuDNN 自动优化
-
-# 创建环境
-if args.env_name == "TrafficEnv8-v0":
-    env = gym.make(args.env_name)
-else:
-    env = gym.make(args.env_name, attack=False)
-env = TimeLimit(env, max_episode_steps=args.T_horizon)
-env = Monitor(env)
-env.unwrapped.start(gui=False)
 
 defender_list = [
     "defender_v248_20250806_1809_3_0_001.pth",
@@ -76,6 +59,25 @@ attacker_list = [
     "attacker_v127_20250809_0232_3_41_001.pth"
 ]
 for idx in range(len(defender_list)):
+
+    random.seed(args.seed)  # 设置 Python 随机种子
+    np.random.seed(args.seed)  # 设置 NumPy 随机种子
+    torch.manual_seed(args.seed)  # 设置 CPU 随机种子
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(args.seed)  # 设置 CUDA 随机种子
+        torch.cuda.manual_seed_all(args.seed)  # 设置所有 GPU 随机种子
+    torch.backends.cudnn.deterministic = True  # 确保 CUDA 的确定性
+    torch.backends.cudnn.benchmark = False  # 禁用 CuDNN 自动优化
+
+    # 创建环境
+    if args.env_name == "TrafficEnv8-v0":
+        env = gym.make(args.env_name)
+    else:
+        env = gym.make(args.env_name, attack=False)
+    env = TimeLimit(env, max_episode_steps=args.T_horizon)
+    env = Monitor(env)
+    env.unwrapped.start(gui=False)
+
     print("="*30)
     print(f"正在运行第 {idx+1} 对防御者-攻击者组合")
     print("="*30)
