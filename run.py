@@ -10,8 +10,8 @@ from FGSM import *
 import gymnasium as gym
 from utils import get_config
 import Environment.environment
-from stable_baselines3 import PPO
-from DARRLNetworkParams import ActorNet
+from stable_baselines3 import PPO, SAC
+from DARRLNetworkParams import ActorNet, SAC_lag_Net, FniNet
 
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
@@ -57,9 +57,27 @@ if args.attacker:
         agent_model = ActorNet(state_dim=26, action_dim=1).to(device)
         agent_model.load_state_dict(torch.load(model_path_drl, map_location=device))
         agent_model.eval()
-    elif args.algo == "PPO":
+    elif args.algo == "PPO" :
         model_path_ppo = os.path.join(prefix, "lunar_baseline")
         agent_model = PPO.load(model_path_ppo, device=device)
+    elif args.algo == "SAC":
+        model_path_ppo = os.path.join(prefix, "lunar_baseline")
+        agent_model = SAC.load(model_path_ppo, device=device)
+    elif args.algo == "SAC_lag":
+        agent_model = SAC_lag_Net(26, 1)
+        model_path_slag = os.path.join(prefix, "lunar_baseline")
+        state_dict_slag = torch.load(model_path_slag + ".pt", map_location=device)
+        agent_model.load_state_dict(state_dict_slag)
+        agent_model.eval()
+    elif args.algo == "FNI":
+        agent_model = FniNet(26, 1)
+        score = f"policy_v{411}.pth"
+        model_path_fni = os.path.join(prefix, score)
+        state_dict = torch.load(model_path_fni, map_location=device)
+        agent_model.load_state_dict(state_dict)
+        agent_model.eval()
+
+
 
 
 
@@ -118,16 +136,32 @@ def train():
                 if args.algo == "drl":
                     state_adv = FGSM_vdarrl(action_adv, agent_model,
                                             state_tensor, algo=args.algo,
-                                            epsilon=args.epsilon, attack_option=args.attack_option)
+                                            epsilon=args.epsilon, device=args.device,
+                                            attack_option=args.attack_option)
                     with torch.no_grad():
                         ego_action_attack, _, _ = agent_model(state_adv)
                         action = ego_action_attack
                 elif args.algo == "PPO" or args.algo == "SAC":
                     state_adv = FGSM_v2(action_adv, agent_model, state_tensor,
-                                        epsilon=args.epsilon)
+                                        epsilon=args.epsilon, device=args.device)
                     with torch.no_grad():
                         ego_action_attack, _ = agent_model.predict(state_adv.cpu(), deterministic=True)
                         action = torch.from_numpy(ego_action_attack).to(state_tensor.device)  # 或者 .cuda()
+
+                elif args.algo == "SAC_lag":
+                    state_adv = FGSM_vdarrl(action_adv, agent_model, state_tensor,algo=args.algo,
+                                        epsilon=args.epsilon, device=args.device)
+                    with torch.no_grad():
+                        _, _, ego_action_attack = agent_model.sample(state_adv)
+                        action = ego_action_attack  # 或者 .cuda()
+                elif args.algo == "FNI":
+                    state_adv = FGSM_vdarrl(action_adv, agent_model, state_tensor,algo=args.algo,
+                                        epsilon=args.epsilon, device=args.device)
+                    with torch.no_grad():
+                        ego_action_attack, _, _ = agent_model(state_adv)
+                        action = ego_action_attack  # 或者 .cuda()
+
+
 
             else:
                 if args.get:
@@ -140,7 +174,8 @@ def train():
 
                     state_adv = FGSM_vdarrl(action_adv, model_t.actor,
                                 state_tensor, algo=args.algo,
-                                epsilon=args.epsilon, attack_option=args.attack_option)
+                                epsilon=args.epsilon, device=args.device,
+                                attack_option=args.attack_option)
 
                     with torch.no_grad():
                         _, _, ego_action_attack = model_t.actor(state_adv)

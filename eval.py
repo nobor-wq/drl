@@ -10,7 +10,7 @@ import os
 import torch as th
 import argparse
 from FGSM import *
-from DARRLNetworkParams import ActorNet, ActorNet_adv
+from DARRLNetworkParams import ActorNet, ActorNet_adv, SAC_lag_Net, FniNet
 
 import random
 
@@ -29,35 +29,57 @@ parser.add_argument('--speed_range', default=15.0, help='Maximum speed')
 parser.add_argument('--state_dim', default=26)
 parser.add_argument('--train_step', type=int, default=100, help='number of training episodes')
 parser.add_argument('--T_horizon', type=int, default=30, help='number of training steps per episode')
-parser.add_argument('--epsilon', type=float, default=0.01, help='扰动强度')
-
-parser.add_argument('--adv_algo', default="drl", help='training adv algorithm')
-parser.add_argument('--algo', default="drl", help='training algorithm')
 parser.add_argument('--env_name', default="TrafficEnv3-v1", help='name of the environment to run')
-parser.add_argument('--attack', action='store_true', help='whether to train for attacker')
-# parser.add_argument('--attack', type=bool, default=False, help='control n_rollout_steps, for PPO')
+
+parser.add_argument('--adv_algo', default="PPO", help='training adv algorithm')
+parser.add_argument('--algo', default="FNI", help='training algorithm')
+parser.add_argument('--epsilon', type=float, default=0.05, help='扰动强度')
+# parser.add_argument('--attack', action='store_true', help='whether to train for attacker')
+parser.add_argument('--attack', type=bool, default=False, help='control n_rollout_steps, for PPO')
 parser.add_argument('--algo_name', default="defender_v253_20250801_1455_1_0_001.pth", help='defender algorithm')
-parser.add_argument('--device', default="cpu", help='cpu or cuda:0 pr cuda:1')
+parser.add_argument('--device', default="cuda:0", help='cpu or cuda:0 pr cuda:1')
 parser.add_argument('--adv_algo_name', default="attacker_v177_20250808_2238_1_0_001.pth", help='attack algorithm')
 parser.add_argument('--seed', type=int, default=1, help='random seed for network')
 
 args = parser.parse_args()
 
-device = torch.device(args.device)
+device = th.device(args.device)
 
 
 defender_list = [
-    "defender_v248_20250806_1809_3_0_001.pth",
-    "defender_v264_20250806_1803_3_9_001.pth",
-    "defender_v266_20250806_1809_3_31_001.pth",
-    "defender_v272_20250806_1805_3_41_001.pth"
+    "defender_v263_20250813_1807_3_5_005.pth",
+    # "defender_v261_20250813_1647_3_13_005.pth",
+    # "defender_v272_20250813_1646_3_57_005.pth",
+    #
+    # "defender_v267_20250813_1843_1_5_005.pth",
+    # "defender_v265_20250813_1850_1_13_005.pth",
+    # "defender_v262_20250813_1935_1_57_005.pth",
+    #
+    # "defender_v267_20250813_1940_2_5_005.pth",
+    # "defender_v267_20250813_1910_2_13_005.pth",
+    # "defender_v268_20250813_1916_2_57_005.pth"
 ]
 attacker_list = [
-    "attacker_v143_20250809_0249_3_0_001.pth",
-    "attacker_v126_20250809_0238_3_9_001.pth",
-    "attacker_v125_20250809_0236_3_31_001.pth",
-    "attacker_v127_20250809_0232_3_41_001.pth"
+    # "attacker_v219_20250808_1959_001.pth",
+    # "attacker_v140_20250808_1950_003.pth",
+    "attacker_v121_20250808_1935_005.pth",
+    #
+    # "attacker_v125_20250813_2247_1_5_005.pth",
+    # "attacker_v164_20250813_2250_1_13_005.pth",
+    # "attacker_v148_20250813_2250_1_57_005.pth",
+    #
+    # "attacker_v184_20250813_2334_2_5_005.pth",
+    # "attacker_v145_20250813_2329_2_13_005.pth",
+    # "attacker_v168_20250813_2342_2_57_005.pth"
 ]
+
+# defender_list = [
+#     "defender_v265_20250809_2052_4_17_003.pth",
+# ]
+# attacker_list = [
+#     "attacker_v188_20250809_1849_4_118_003.pth",
+# ]
+
 for idx in range(len(defender_list)):
 
     random.seed(args.seed)  # 设置 Python 随机种子
@@ -83,9 +105,10 @@ for idx in range(len(defender_list)):
     print("="*30)
 
     args.algo_name = defender_list[idx]
-    args.adv_algo_name = attacker_list[idx]
+
 
     if args.attack:
+        args.adv_algo_name = attacker_list[idx]
         if args.best_model:
             adv_model_path = os.path.join(args.adv_path, args.adv_algo, args.env_name, args.algo, args.addition_msg, 'best_model')
         else:
@@ -110,36 +133,37 @@ for idx in range(len(defender_list)):
     elif args.algo == 'SAC':
         print('*******************algo is SAC*******************')
         trained_agent = SAC.load(model_path, device=device)
-    # elif args.algo == 'SAC_lag':
-    #     print('*******************algo is SAC_lag*******************')
-    #     trained_agent = GaussianPolicy(26, 1)
-    #     state_dict = torch.load(model_path+".pt", map_location=device)
-    #     trained_agent.load_state_dict(state_dict)
-    #     trained_agent.eval()
-    elif args.algo == 'TD3':
-        print('*******************algo is TD3*******************')
-        trained_agent = TD3.load(model_path, device=device)
+    elif args.algo == 'SAC_lag':
+        print('*******************algo is SAC_lag*******************')
+        trained_agent = SAC_lag_Net(26, 1)
+        state_dict = torch.load(model_path+".pt", map_location=device)
+        trained_agent.load_state_dict(state_dict)
+        trained_agent.eval()
+        trained_agent.to(device)  # 再次确保
+    # elif args.algo == 'TD3':
+    #     print('*******************algo is TD3*******************')
+    #     trained_agent = TD3.load(model_path, device=device)
     elif args.algo == 'drl':
         print('*******************algo is drl*******************')
         model_path_drl = os.path.join(args.age_path, args.env_name, args.algo, 'defender', args.algo_name)
         trained_agent = ActorNet(state_dim=26, action_dim=1).to(device)
         trained_agent.load_state_dict(torch.load(model_path_drl, map_location=device))
         trained_agent.eval()
-
-
-    elif args.algo == 'DARRL':
-        trained_agent = ActorNet(26,1)
-        model_path_drl = os.path.join(args.age_path, args.env_name, args.algo, 'defender', 'policy2000_actor_38.pth')
+    #
+    # elif args.algo == 'DARRL':
+    #     trained_agent = ActorNet(26,1)
+    #     model_path_drl = os.path.join(args.age_path, args.env_name, args.algo, 'defender', 'policy2000_actor_38.pth')
+    #     state_dict = torch.load(model_path_drl, map_location=device)
+    #     trained_agent.load_state_dict(state_dict)
+    #     trained_agent.eval()
+    elif args.algo == "FNI":
+        trained_agent = FniNet(26, 1)
+        score = f"policy_v{411}"
+        model_path_drl = os.path.join('models', args.env_name, args.algo, 'defender', score) + '.pth'
         state_dict = torch.load(model_path_drl, map_location=device)
         trained_agent.load_state_dict(state_dict)
         trained_agent.eval()
-    # elif args.algo == "FNI":
-    #     trained_agent = FniNet(26, 1)
-    #     score = f"policy_v{411}"
-    #     path = os.path.join('models', args.env_name, args.algo, 'defender', score) + '.pth'
-    #     state_dict = torch.load(path, map_location=device)
-    #     trained_agent.load_state_dict(state_dict)
-    #     trained_agent.eval()
+        trained_agent.to(device)  # 再次确保
 
     # 进行验证
     rewards = []
@@ -205,6 +229,8 @@ for idx in range(len(defender_list)):
                         _, _, adv_action_fromState = trained_agent.sample(adv_state)
                         action = adv_action_fromState.detach().cpu().numpy()
                     else:
+                        if isinstance(adv_state, th.Tensor):
+                            adv_state = adv_state.detach().cpu().numpy()
                         adv_action_fromState, _ = trained_agent.predict(adv_state, deterministic=True)
                         action = adv_action_fromState
                     print(episode_steps, 'attack', '{} action is'.format(args.attack_method), adv_action_fromState)

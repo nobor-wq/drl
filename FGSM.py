@@ -46,7 +46,7 @@ def FGSM_v2(adv_action, victim_agent, last_state, epsilon=0.01,
         last_state = torch.clamp(last_state + alpha * last_state.grad.sign(),min=clamp_min, max=clamp_max).detach_()
     return last_state
 
-def FGSM_vdarrl(adv_action, victim_agent, last_state, algo, epsilon=0.01,
+def FGSM_vdarrl(adv_action, victim_agent, last_state, algo, epsilon=0.05,
                 device="cpu", attack_option="a2", num_iterations=50):
     device = torch.device(device)
     alpha = epsilon/num_iterations

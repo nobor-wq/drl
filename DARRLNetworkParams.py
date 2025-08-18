@@ -81,6 +81,65 @@ class CriticNet_adv(torch.nn.Module):
         x = F.relu(self.fc2(x))
         return self.fc_out(x)
 
+class SAC_lag_Net(nn.Module):
+    def __init__(self, state_dim, action_dim, hidden_dim=256, log_std_min=-10, log_std_max=10):
+        super(SAC_lag_Net, self).__init__()
+        self.log_std_min = log_std_min
+        self.log_std_max = log_std_max
+
+        self.net = nn.Sequential(
+            nn.Linear(state_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU()
+        )
+        self.mean_linear = nn.Linear(hidden_dim, action_dim)
+        self.log_std_linear = nn.Linear(hidden_dim, action_dim)
+
+    def forward(self, state):
+        x = self.net(state)
+        mean = self.mean_linear(x)
+        log_std = self.log_std_linear(x)
+        log_std = torch.clamp(log_std, self.log_std_min, self.log_std_max)
+        return mean, log_std
+
+    def sample(self, state):
+        mean, log_std = self.forward(state)
+        std = log_std.exp()
+        normal = torch.distributions.Normal(mean, std)
+        x_t = normal.rsample()  # for reparameterization
+        y_t = torch.tanh(x_t)
+        action = y_t
+        log_prob = normal.log_prob(x_t)
+        # Enforcing action bounds
+        log_prob -= torch.log(1 - y_t.pow(2) + 1e-6)
+        log_prob = log_prob.sum(-1, keepdim=True)
+        return action, log_prob, torch.tanh(mean)
+
+class FniNet(nn.Module):
+    def __init__(self, state_dim, action_dim, hidden_sizes=256, min_log_std=-10.0, max_log_std=10.0):
+        super(FniNet, self).__init__()
+        self.fc1 = nn.Linear(state_dim, hidden_sizes)
+        self.fc2 = nn.Linear(hidden_sizes, hidden_sizes)
+
+        self.mu_head = nn.Linear(hidden_sizes, action_dim)
+        self.log_std_head = nn.Linear(hidden_sizes, action_dim)
+
+        self.min_log_std = min_log_std
+        self.max_log_std = max_log_std
+
+    def forward(self, x):
+        x = torch.as_tensor(x, dtype=torch.float32)
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+
+        mu = torch.tanh(self.mu_head(x))
+        std = torch.exp(torch.clamp(self.log_std_head(x), self.min_log_std, self.max_log_std)).sqrt()
+
+        action = mu + std * torch.randn_like(mu)
+        action = torch.clamp(action, -1.0, 1.0)
+
+        return mu, std, action
 
 
 
