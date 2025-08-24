@@ -10,7 +10,7 @@ from FGSM import *
 import gymnasium as gym
 from utils import get_config
 import Environment.environment
-from stable_baselines3 import PPO, SAC
+from stable_baselines3 import PPO, SAC, TD3
 from DARRLNetworkParams import ActorNet, SAC_lag_Net, FniNet
 
 
@@ -63,6 +63,9 @@ if args.attacker:
     elif args.algo == "SAC":
         model_path_ppo = os.path.join(prefix, "lunar_baseline")
         agent_model = SAC.load(model_path_ppo, device=device)
+    elif args.algo == "TD3":
+        model_path_ppo = os.path.join(prefix, "lunar_baseline")
+        agent_model = TD3.load(model_path_ppo, device=device)
     elif args.algo == "SAC_lag":
         agent_model = SAC_lag_Net(26, 1)
         model_path_slag = os.path.join(prefix, "lunar_baseline")
@@ -76,13 +79,20 @@ if args.attacker:
         state_dict = torch.load(model_path_fni, map_location=device)
         agent_model.load_state_dict(state_dict)
         agent_model.eval()
+    elif args.algo == "DARRL":
+        agent_model = FniNet(26, 1)
+        score = f"policy2000_actor.pth"
+        model_path_fni = os.path.join(prefix, score)
+        state_dict = torch.load(model_path_fni, map_location=device)
+        agent_model.load_state_dict(state_dict)
+        agent_model.eval()
 
 
 
 
-
-current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H%M")
-model_dir_base = os.getcwd() + '/models/' + args.env_name + f'/log-{current_time}/'
+attack_prefix = os.path.join('models', args.env_name, args.algo, str(args.epsilon), str(args.seed), 'attacker')
+# current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H%M")
+model_dir_base = os.path.join(os.getcwd(), attack_prefix)
 train_result_dir =model_dir_base + '/results/'
 
 if not os.path.exists(model_dir_base):
