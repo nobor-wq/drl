@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 import swanlab
 from FGSM import *
+import math
 
 from DARRLNetworkParams import ActorNet, CriticNet, ActorNet_adv, CriticNet_adv
 import torch.optim as optim
@@ -128,6 +129,10 @@ class DRL:
         self.lam1_optimizer = optim.Adam([self.log_lam1], lr=self.lam_lr)
         self.lam2_optimizer = optim.Adam([self.log_lam2], lr=self.lam_lr)
 
+        # 添加当前最大奖励来保存最优模型
+        self.max_reward = 0
+        self.adv_max_reward = 1000
+
     def soft_target_update(self, main, target, tau=0.005):
         for main_param, target_param in zip(main.parameters(), target.parameters()):
             target_param.data.copy_(tau * main_param.data + (1.0 - tau) * target_param.data)
@@ -195,14 +200,18 @@ class DRL:
         elif args.method == "m2":
             # 2025-07-27 wq 只有约束1
             action_no_attack, _, action_no_attack_pi = self.actor(states)
-            q1_adv = self.critic1_adv(states, action_no_attack_pi).squeeze(-1)
-            q2_adv = self.critic2_adv(states, action_no_attack_pi).squeeze(-1)
-            action_loss = ((q1_adv + q2_adv) / 2)
-            g1 = action_loss - self.eps1
+            with torch.no_grad():
+                q1_adv = self.critic1_adv(states, action_no_attack_pi).squeeze(-1)
+                q2_adv = self.critic2_adv(states, action_no_attack_pi).squeeze(-1)
+            # q1_adv = self.critic1_adv(states, action_no_attack_pi).squeeze(-1)
+            # q2_adv = self.critic2_adv(states, action_no_attack_pi).squeeze(-1)
+            # action_loss = ((q1_adv + q2_adv) / 2)
+            action_loss = torch.minimum(q1_adv, q2_adv)
+            g1 = torch.mean(action_loss) - self.eps1
             if args.lag:
                 actor_loss = torch.mean(-min_q_pi + g1 * self.lam1)
             else:
-                actor_loss = torch.mean(-min_q_pi + action_loss * self.lam1)
+                actor_loss = torch.mean(-min_q_pi + torch.mean(action_loss) * self.lam1)
             if 0:
                 print("action_loss shape: ", action_loss.shape)
                 print("g1 shape: ", g1.shape)
@@ -223,8 +232,9 @@ class DRL:
                 print("actor_loss shape: ", actor_loss.shape)
         elif args.method == "m4":
             if args.get:
-                q1_adv = self.critic1_adv(states_fgsm, pi_adv).squeeze(-1)
-                q2_adv = self.critic2_adv(states_fgsm, pi_adv).squeeze(-1)
+                with torch.no_grad():
+                    q1_adv = self.critic1_adv(states_fgsm, pi_adv).squeeze(-1)
+                    q2_adv = self.critic2_adv(states_fgsm, pi_adv).squeeze(-1)
                 action_loss = ((q1_adv + q2_adv) / 2)
                 g1 = action_loss - self.eps1
                 policy_loss = F.mse_loss(mu, mu_adv)
@@ -261,12 +271,16 @@ class DRL:
 
                 # 2025-07-27 wq 全约束
                 if args.critic:
-                    q1_adv = self.critic1_adv(states_adv, pi).squeeze(-1)
-                    q2_adv = self.critic2_adv(states_adv, pi).squeeze(-1)
+                    with torch.no_grad():
+                        q1_adv = self.critic1_adv(states_adv, pi).squeeze(-1)
+                        q2_adv = self.critic2_adv(states_adv, pi).squeeze(-1)
                 else:
-                    q1_adv = self.critic1_adv(states, action_no_attack_pi).squeeze(-1)
-                    q2_adv = self.critic2_adv(states, action_no_attack_pi).squeeze(-1)
-                action_loss = ((q1_adv + q2_adv) / 2)
+                    with torch.no_grad():
+                        q1_adv = self.critic1_adv(states, action_no_attack_pi).squeeze(-1)
+                        q2_adv = self.critic2_adv(states, action_no_attack_pi).squeeze(-1)
+                # action_loss = ((q1_adv + q2_adv) / 2)
+                # action_loss = torch.minimum(q1_adv, q2_adv)
+                action_loss = torch.max(q1_adv, q2_adv)
                 g1 = action_loss - self.eps1
 
                 policy_loss = F.mse_loss(mu, action_no_attack)
@@ -327,6 +341,62 @@ class DRL:
         self.soft_target_update(self.critic1, self.critic1_target)
         self.soft_target_update(self.critic2, self.critic2_target)
 
+
+    def update_defender_init(self, states, states_adv, next_states, actions, dones, rewards):
+        with torch.no_grad():
+            _, _, next_pi = self.actor(next_states)
+        q1 = self.critic1(states_adv, actions).squeeze(-1)
+        q2 = self.critic2(states_adv, actions).squeeze(-1)
+
+        min_q_next_pi = torch.min(self.critic1_target(next_states, next_pi),
+                                  self.critic2_target(next_states, next_pi)).squeeze(-1).to(self.device)
+
+        v_backup = min_q_next_pi
+        q_backup = rewards + self.gamma * (1 - dones) * v_backup
+        q_backup = q_backup.to(self.device)
+
+        qf1_loss = F.mse_loss(q1, q_backup.detach())
+        qf2_loss = F.mse_loss(q2, q_backup.detach())
+
+        # Update two Q network parameter
+        self.critic1_optimizer.zero_grad()
+        qf1_loss.backward()
+        self.critic1_optimizer.step()
+
+        self.critic2_optimizer.zero_grad()
+        qf2_loss.backward()
+        self.critic2_optimizer.step()
+
+        # 2025-07-26 wq actor
+
+        if args.get:
+            with torch.no_grad():
+                action_adv, _, _ = self.actor_adv(states)
+            states_fgsm = FGSM_vdarrl(action_adv, self.actor,
+                                    states, algo=args.algo,
+                                    epsilon=args.epsilon, device=args.device,
+                                      attack_option=args.attack_option)
+            mu_adv, std, pi_adv = self.actor(states_fgsm)
+
+        mu, std, pi = self.actor(states_adv)
+        # Actor loss
+        min_q_pi = torch.min(self.critic1(states_adv, pi),
+                             self.critic2(states_adv, pi)).squeeze(-1).to(self.device)
+
+        actor_loss = (-min_q_pi).mean()
+        # Update actor network parameter
+        self.actor_optimizer.zero_grad()
+        actor_loss.backward()
+        self.actor_optimizer.step()
+
+        # 2025-07-27 wq 记录
+        if args.swanlab:
+            actor_loss_val = -actor_loss.detach().cpu().item()
+            swanlab.log({"loss/agent_loss": actor_loss_val})
+
+        # Polyak averaging for target parameter
+        self.soft_target_update(self.critic1, self.critic1_target)
+        self.soft_target_update(self.critic2, self.critic2_target)
 
     def update_attacker(self, states, next_states, actions, dones, costs):
         with torch.no_grad():
@@ -406,7 +476,7 @@ class DRL:
 
 
 
-    def update(self, attacker_flag):
+    def update(self, attacker_flag, init_flag):
         batch = self.replay_buffer.sample(self.batch_size)
 
         states = batch['states']
@@ -425,7 +495,10 @@ class DRL:
                 if attacker_flag:
                     self.update_attacker(states, next_states, actions_adv, dones, costs)
                 else:
-                    self.update_defender(states, states_adv, next_states, actions, dones, rewards)
+                    if init_flag:
+                        self.update_defender_init(states, states_adv, next_states, actions, dones, rewards)
+                    else:
+                        self.update_defender(states, states_adv, next_states, actions, dones, rewards)
             else:
                 self.update_attacker(states, next_states, actions, dones, costs)
                 self.update_defender(states, states_adv, next_states, actions, dones, rewards)
@@ -442,39 +515,66 @@ class DRL:
 
         return self
 
-    def save_model(self, model_name,  modelSavedPath):
+    def save_model(self, score,  modelSavedPath, final=False):
         timestamp = time.strftime("%Y%m%d_%H%M")
 
-        # 假设 modelSavedPath, model_name, timestamp, self.actor 都已定义
+        # 假设 modelSavedPath, score, timestamp, self.actor 都已定义
         if args.get:
             # 保存攻击者
             attacker_path = os.path.join(modelSavedPath, "attacker")
             os.makedirs(attacker_path, exist_ok=True)
-            name_att = f"attacker_v{model_name}_{timestamp}.pth"
+            name_att = f"attacker_v{score}_{timestamp}.pth"
             save_path_att = os.path.join(attacker_path, name_att)
             torch.save(self.actor_adv.state_dict(), save_path_att)
+            if self.adv_max_reward >= score:
+                save_best_path = os.path.join(attacker_path, 'best_model.pth')
+                torch.save(self.actor_adv.state_dict(), save_best_path)
+                self.adv_max_reward = score
 
             # 保存防御者
             defender_path = os.path.join(modelSavedPath, "defender")
             os.makedirs(defender_path, exist_ok=True)
-            name_def = f"defender_v{model_name}_{timestamp}.pth"
+            name_def = f"defender_v{score}_{timestamp}.pth"
             save_path_def = os.path.join(defender_path, name_def)
             torch.save(self.actor.state_dict(), save_path_def)
+            if self.max_reward <= score:
+                save_best_path = os.path.join(defender_path, 'best_model.pth')
+                torch.save(self.actor.state_dict(), save_best_path)
+                self.max_reward = score
 
         elif args.attacker:
             # 只保存攻击者
             attacker_path = os.path.join(modelSavedPath, "attacker")
             os.makedirs(attacker_path, exist_ok=True)
-            name_att = f"attacker_v{model_name}_{timestamp}.pth"
+            name_att = f"attacker_v{score}_{timestamp}.pth"
             save_path_att = os.path.join(attacker_path, name_att)
             torch.save(self.actor_adv.state_dict(), save_path_att)
+            if self.adv_max_reward >= score:
+                save_best_path = os.path.join(attacker_path, 'best_model.pth')
+                torch.save(self.actor_adv.state_dict(), save_best_path)
+                self.adv_max_reward = score
 
         else:
             # 都没有参数时只保存防御者
             defender_path = os.path.join(modelSavedPath, "defender")
             os.makedirs(defender_path, exist_ok=True)
-            name_def = f"defender_v{model_name}_{timestamp}.pth"
+            name_def = f"defender_v{score}_{timestamp}.pth"
             save_path_def = os.path.join(defender_path, name_def)
             torch.save(self.actor.state_dict(), save_path_def)
+            if self.max_reward <= score:
+                save_best_path = os.path.join(defender_path, 'best_model.pth')
+                torch.save(self.actor.state_dict(), save_best_path)
+                self.max_reward = score
 
+        if final:
+            if args.attacker:
+                attacker_path = os.path.join(modelSavedPath, "attacker")
+                os.makedirs(attacker_path, exist_ok=True)
+                save_path_att = os.path.join(attacker_path, 'final_model.pth')
+                torch.save(self.actor_adv.state_dict(), save_path_att)
+            else:
+                defender_path = os.path.join(modelSavedPath, "defender")
+                os.makedirs(defender_path, exist_ok=True)
+                save_path_def = os.path.join(defender_path, 'final_model.pth')
+                torch.save(self.actor.state_dict(), save_path_def)
 

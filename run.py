@@ -50,13 +50,20 @@ torch.backends.cudnn.benchmark = False  # 禁用 CuDNN 自动优化
 if args.attacker:
     prefix = os.path.join('models', args.env_name, args.algo, 'defender')
     if args.algo == "drl":
-        filename = f'{args.model_name}.pth'
+        if args.best_model:
+            filename = 'best_model.pth'
+        else:
+            filename = 'final_model.pth'
+        # filename = f'{args.model_name}.pth'
+        prefix = os.path.join('models', args.env_name, args.algo, str(args.epsilon), str(args.seed), str(args.method),
+                              '/defender')
         model_path_drl = os.path.join(prefix, filename)
         if not os.path.isfile(model_path_drl):
             raise FileNotFoundError(f"找不到模型文件：{model_path_drl}")
         agent_model = ActorNet(state_dim=26, action_dim=1).to(device)
         agent_model.load_state_dict(torch.load(model_path_drl, map_location=device))
         agent_model.eval()
+        print('***********模型路径:', model_path_drl, '****************')
     elif args.algo == "PPO" :
         model_path_ppo = os.path.join(prefix, "lunar_baseline")
         agent_model = PPO.load(model_path_ppo, device=device)
@@ -90,7 +97,7 @@ if args.attacker:
 
 
 
-attack_prefix = os.path.join('models', args.env_name, args.algo, str(args.epsilon), str(args.seed), 'attacker')
+attack_prefix = os.path.join('models', args.env_name, args.algo, str(args.epsilon), str(args.seed), str(args.method))
 # current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H%M")
 model_dir_base = os.path.join(os.getcwd(), attack_prefix)
 train_result_dir =model_dir_base + '/results/'
@@ -124,7 +131,7 @@ def train():
     sn_epi = []
 
     attacker_flag = False
-
+    init_flag = True
 
     for n_epi in range(args.train_step):
         state, _ = env.reset()
@@ -134,11 +141,12 @@ def train():
             step += 1
             if n_epi > 10:
                 if args.frequency:
-                    if (n_epi + 1) % 200 < 100:
+                    if (n_epi + 1) % (args.train_step_per_iteration * 2) < args.train_step_per_iteration:
                         attacker_flag = False
                     else:
                         attacker_flag = True
-                model_t.update(attacker_flag)
+                model_t.update(attacker_flag, init_flag)
+                init_flag = False
 
             if args.attacker:
                 with torch.no_grad():
@@ -151,7 +159,7 @@ def train():
                     with torch.no_grad():
                         ego_action_attack, _, _ = agent_model(state_adv)
                         action = ego_action_attack
-                elif args.algo == "PPO" or args.algo == "SAC":
+                elif args.algo == "PPO" or args.algo == "SAC" or args.algo == "TD3":
                     state_adv = FGSM_v2(action_adv, agent_model, state_tensor,
                                         epsilon=args.epsilon, device=args.device)
                     with torch.no_grad():
@@ -164,7 +172,7 @@ def train():
                     with torch.no_grad():
                         _, _, ego_action_attack = agent_model.sample(state_adv)
                         action = ego_action_attack  # 或者 .cuda()
-                elif args.algo == "FNI":
+                elif args.algo == "FNI" or args.algo == "DARRL":
                     state_adv = FGSM_vdarrl(action_adv, agent_model, state_tensor,algo=args.algo,
                                         epsilon=args.epsilon, device=args.device)
                     with torch.no_grad():
@@ -179,8 +187,11 @@ def train():
                         _, _, action = model_t.actor(state_tensor)
                 else:
                     with torch.no_grad():
+                        if attacker_flag:
                         # _, _, action_before_attack = model_t.actor(state_tensor)
-                        _, _, action_adv  = model_t.actor_adv(state_tensor)
+                            _, _, action_adv  = model_t.actor_adv(state_tensor)
+                        else:
+                            action_adv, _, _ = model_t.actor_adv(state_tensor)
 
                     state_adv = FGSM_vdarrl(action_adv, model_t.actor,
                                 state_tensor, algo=args.algo,
@@ -188,7 +199,10 @@ def train():
                                 attack_option=args.attack_option)
 
                     with torch.no_grad():
-                        _, _, ego_action_attack = model_t.actor(state_adv)
+                        if attacker_flag:
+                            ego_action_attack, _, _ = model_t.actor(state_adv)
+                        else:
+                            _, _, ego_action_attack = model_t.actor(state_adv)
                         action = ego_action_attack
 
             next_state, reward, done, _, info = env.step(action)
@@ -243,11 +257,17 @@ def train():
 
         if args.attacker:
             if (n_epi + 1) % 100 == 0 :
-                model_t.save_model(int(score), model_dir_base)
+                if args.train_step - (n_epi + 1) < 100:
+                    model_t.save_model(int(score), model_dir_base, True)
+                else:
+                    model_t.save_model(int(score), model_dir_base, False)
                 print("#The attacker models are saved!#", n_epi + 1)
         else:
             if (n_epi + 1) % 100 == 0 and (n_epi + 1) >= int(args.train_step * 0.7) :
-                model_t.save_model(int(score), model_dir_base)
+                if args.train_step - (n_epi + 1) < 100:
+                    model_t.save_model(int(score), model_dir_base, True)
+                else:
+                    model_t.save_model(int(score), model_dir_base, False)
                 print("#The defender models are saved!#", n_epi + 1)
 
         if done is True:

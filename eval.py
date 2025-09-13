@@ -22,7 +22,6 @@ parser.add_argument('--age_path', default="./models/")
 parser.add_argument('--adv_path', default="./models/")
 parser.add_argument('--attack_method', default="fgsm", help='which attack method to be applied')
 parser.add_argument('--action_dim', default=1)
-parser.add_argument('--best_model', type=bool, default=False, help='control n_rollout_steps, for PPO')
 parser.add_argument('--max_a', default=7.6, help='Maximum Acceleration')
 parser.add_argument('--print_interval', default=10)
 parser.add_argument('--speed_range', default=15.0, help='Maximum speed')
@@ -34,301 +33,301 @@ parser.add_argument('--env_name', default="TrafficEnv3-v1", help='name of the en
 parser.add_argument('--adv_algo', default="PPO", help='training adv algorithm')
 parser.add_argument('--algo', default="FNI", help='training algorithm')
 parser.add_argument('--epsilon', type=float, default=0.05, help='扰动强度')
-# parser.add_argument('--attack', action='store_true', help='whether to train for attacker')
-parser.add_argument('--attack', type=bool, default=False, help='control n_rollout_steps, for PPO')
+parser.add_argument('--attack', action='store_true', help='control n_rollout_steps, for PPO')
 parser.add_argument('--algo_name', default="defender_v253_20250801_1455_1_0_001.pth", help='defender algorithm')
 parser.add_argument('--device', default="cuda:0", help='cpu or cuda:0 pr cuda:1')
 parser.add_argument('--adv_algo_name', default="attacker_v177_20250808_2238_1_0_001.pth", help='attack algorithm')
 parser.add_argument('--seed', type=int, default=1, help='random seed for network')
+parser.add_argument('--method', default="m1", help='防御者约束方法')
+parser.add_argument('--defender_best_model', action='store_true', help='defender best model')
+parser.add_argument('--attacker_best_model', action='store_true', help='attacker best model')
 
 args = parser.parse_args()
 
 device = th.device(args.device)
 
 
-defender_list = [
-    "defender_v263_20250813_1807_3_5_005.pth",
-    # "defender_v261_20250813_1647_3_13_005.pth",
-    # "defender_v272_20250813_1646_3_57_005.pth",
-    #
-    # "defender_v267_20250813_1843_1_5_005.pth",
-    # "defender_v265_20250813_1850_1_13_005.pth",
-    # "defender_v262_20250813_1935_1_57_005.pth",
-    #
-    # "defender_v267_20250813_1940_2_5_005.pth",
-    # "defender_v267_20250813_1910_2_13_005.pth",
-    # "defender_v268_20250813_1916_2_57_005.pth"
-]
-attacker_list = [
-    # "attacker_v219_20250808_1959_001.pth",
-    # "attacker_v140_20250808_1950_003.pth",
-    "attacker_v121_20250808_1935_005.pth",
-    #
-    # "attacker_v125_20250813_2247_1_5_005.pth",
-    # "attacker_v164_20250813_2250_1_13_005.pth",
-    # "attacker_v148_20250813_2250_1_57_005.pth",
-    #
-    # "attacker_v184_20250813_2334_2_5_005.pth",
-    # "attacker_v145_20250813_2329_2_13_005.pth",
-    # "attacker_v168_20250813_2342_2_57_005.pth"
-]
-
 # defender_list = [
-#     "defender_v265_20250809_2052_4_17_003.pth",
+#     "defender_v221_20250825_1537.pth",
+#     # "defender_v261_20250813_1647_3_13_005.pth",
+#     # "defender_v272_20250813_1646_3_57_005.pth",
+#     #
+#     # "defender_v267_20250813_1843_1_5_005.pth",
+#     # "defender_v265_20250813_1850_1_13_005.pth",
+#     # "defender_v262_20250813_1935_1_57_005.pth",
+#     #
+#     # "defender_v267_20250813_1940_2_5_005.pth",
+#     # "defender_v267_20250813_1910_2_13_005.pth",
+#     # "defender_v268_20250813_1916_2_57_005.pth"
 # ]
 # attacker_list = [
-#     "attacker_v188_20250809_1849_4_118_003.pth",
+#     # "attacker_v219_20250808_1959_001.pth",
+#     # "attacker_v140_20250808_1950_003.pth",
+#     "attacker_v258_20250829_1500.pth",
+#     #
+#     # "attacker_v125_20250813_2247_1_5_005.pth",
+#     # "attacker_v164_20250813_2250_1_13_005.pth",
+#     # "attacker_v148_20250813_2250_1_57_005.pth",
+#     #
+#     # "attacker_v184_20250813_2334_2_5_005.pth",
+#     # "attacker_v145_20250813_2329_2_13_005.pth",
+#     # "attacker_v168_20250813_2342_2_57_005.pth"
 # ]
+#
+# # defender_list = [
+# #     "defender_v265_20250809_2052_4_17_003.pth",
+# # ]
+# # attacker_list = [
+# #     "attacker_v188_20250809_1849_4_118_003.pth",
+# # ]
 
-for idx in range(len(defender_list)):
+# for idx in range(len(defender_list)):
 
-    random.seed(args.seed)  # 设置 Python 随机种子
-    np.random.seed(args.seed)  # 设置 NumPy 随机种子
-    torch.manual_seed(args.seed)  # 设置 CPU 随机种子
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(args.seed)  # 设置 CUDA 随机种子
-        torch.cuda.manual_seed_all(args.seed)  # 设置所有 GPU 随机种子
-    torch.backends.cudnn.deterministic = True  # 确保 CUDA 的确定性
-    torch.backends.cudnn.benchmark = False  # 禁用 CuDNN 自动优化
+random.seed(args.seed)  # 设置 Python 随机种子
+np.random.seed(args.seed)  # 设置 NumPy 随机种子
+torch.manual_seed(args.seed)  # 设置 CPU 随机种子
+if torch.cuda.is_available():
+    torch.cuda.manual_seed(args.seed)  # 设置 CUDA 随机种子
+    torch.cuda.manual_seed_all(args.seed)  # 设置所有 GPU 随机种子
+torch.backends.cudnn.deterministic = True  # 确保 CUDA 的确定性
+torch.backends.cudnn.benchmark = False  # 禁用 CuDNN 自动优化
 
-    # 创建环境
-    if args.env_name == "TrafficEnv8-v0":
-        env = gym.make(args.env_name)
+# 创建环境
+if args.env_name == "TrafficEnv8-v0":
+    env = gym.make(args.env_name)
+else:
+    env = gym.make(args.env_name, attack=False)
+env = TimeLimit(env, max_episode_steps=args.T_horizon)
+env = Monitor(env)
+env.unwrapped.start(gui=False)
+
+# print("="*30)
+# print(f"正在运行第 {idx+1} 对防御者-攻击者组合")
+# print("="*30)
+
+
+
+if args.attack:
+    adv_model_path = os.path.join(args.adv_path, args.env_name, args.algo, str(args.epsilon), str(args.seed), str(args.method))
+    if args.attacker_best_model:
+        adv_model_path = os.path.join(adv_model_path, 'attacker', "best_model.pth")
     else:
-        env = gym.make(args.env_name, attack=False)
-    env = TimeLimit(env, max_episode_steps=args.T_horizon)
-    env = Monitor(env)
-    env.unwrapped.start(gui=False)
+        adv_model_path = os.path.join(adv_model_path, 'attacker', "final_model.pth")
 
-    print("="*30)
-    print(f"正在运行第 {idx+1} 对防御者-攻击者组合")
-    print("="*30)
-
-    args.algo_name = defender_list[idx]
+    model = ActorNet_adv(state_dim=26, action_dim=1).to(device)
+    model.load_state_dict(torch.load(adv_model_path, map_location=device))
+    model.eval()
 
 
-    if args.attack:
-        args.adv_algo_name = attacker_list[idx]
-        if args.best_model:
-            adv_model_path = os.path.join(args.adv_path, args.adv_algo, args.env_name, args.algo, args.addition_msg, 'best_model')
+# 加载训练好的自动驾驶模型
+model_path = os.path.join(args.age_path, args.env_name, args.algo, 'defender', 'lunar_baseline')
+print('**********************************************************')
+
+if args.algo == 'PPO':
+    print('*******************algo is PPO*******************')
+    trained_agent = PPO.load(model_path, device=device)
+elif args.algo == 'SAC':
+    print('*******************algo is SAC*******************')
+    trained_agent = SAC.load(model_path, device=device)
+elif args.algo == 'SAC_lag':
+    print('*******************algo is SAC_lag*******************')
+    trained_agent = SAC_lag_Net(26, 1)
+    state_dict = torch.load(model_path+".pt", map_location=device)
+    trained_agent.load_state_dict(state_dict)
+    trained_agent.eval()
+    trained_agent.to(device)  # 再次确保
+# elif args.algo == 'TD3':
+#     print('*******************algo is TD3*******************')
+#     trained_agent = TD3.load(model_path, device=device)
+elif args.algo == 'drl':
+    print('*******************algo is drl*******************')
+    model_path_drl = os.path.join(args.age_path, args.env_name, args.algo, str(args.epsilon), str(args.seed), str(args.method), 'defender')
+    if args.defender_best_model:
+        model_path_drl = os.path.join(model_path_drl, "best_model.pth")
+    else:
+        model_path_drl = os.path.join(model_path_drl, "final_model.pth")
+    trained_agent = ActorNet(state_dim=26, action_dim=1).to(device)
+    trained_agent.load_state_dict(torch.load(model_path_drl, map_location=device))
+    trained_agent.eval()
+#
+elif args.algo == 'DARRL':
+    trained_agent = FniNet(26,1)
+    model_path_drl = os.path.join(args.age_path, args.env_name, args.algo, 'defender', 'policy2000_actor.pth')
+    state_dict = torch.load(model_path_drl, map_location=device)
+    trained_agent.load_state_dict(state_dict)
+    trained_agent.eval()
+    trained_agent.to(device)
+
+elif args.algo == "FNI":
+    trained_agent = FniNet(26, 1)
+    score = f"policy_v{411}"
+    model_path_drl = os.path.join('models', args.env_name, args.algo, 'defender', score) + '.pth'
+    state_dict = torch.load(model_path_drl, map_location=device)
+    trained_agent.load_state_dict(state_dict)
+    trained_agent.eval()
+    trained_agent.to(device)  # 再次确保
+
+# 进行验证
+rewards = []
+steps = []
+
+maxSpeed = 15.0
+ct = 0
+sn = 0
+sat = 0
+speed_list = []
+attack_count_list = []
+mean_attack_reward_list = []
+for episode in range(args.train_step):
+    obs, info = env.reset(options="seed")#
+    speed = 0
+    episode_reward = 0
+    episode_steps = 0
+    for _ in range(args.T_horizon):
+        obs_tensor = obs_as_tensor(obs, device)
+        # print("扰动前的状态：", obs_tensor)
+        if args.attack:
+            speed_list.append(obs[-2])
+            with th.no_grad():
+                if args.algo in ('FNI', 'DARRL'):
+                    actions, std, _action = trained_agent(obs_tensor)
+                    actions = actions.detach().cpu().numpy()
+                elif args.algo == 'drl':
+                    actions, _, _ = trained_agent(obs_tensor)
+                elif args.algo == 'SAC_lag':
+                    _, _, actions = trained_agent.sample(obs_tensor)
+                else:
+                    actions, _ = trained_agent.predict(obs, deterministic=True)
+
+                if isinstance(actions, np.ndarray):
+                    # 假设 action 是一个标量数组，比如 array([0])，用 item() 取标量
+                    actions_tensor = th.tensor(actions, device=obs_tensor.device)
+                elif isinstance(actions, torch.Tensor):
+                    actions_tensor = actions
+                adv_actions, _, _  = model(obs_tensor)
+            print(episode_steps, 'attack', 'Victim action is', actions, 'adv actions is', adv_actions)
+
+            if args.attack_method == 'fgsm':
+                if args.algo == 'drl' or args.algo == 'DARRL' or args.algo == 'SAC_lag' or args.algo == 'FNI':
+                    # print("states: ", obs_tensor)
+                    adv_state = FGSM_vdarrl(adv_actions, victim_agent=trained_agent,last_state=obs_tensor,
+                                            algo=args.algo, epsilon=args.epsilon, device=args.device)
+                    # print("adv_states: ", adv_state)
+                else:
+                    adv_state = FGSM_v2(adv_actions, victim_agent=trained_agent, last_state=obs_tensor,
+                                        epsilon=args.epsilon, device=args.device)
+
+            with th.no_grad():
+                if args.algo in ('FNI', 'DARRL'):
+                    adv_action_fromState, _, _ = trained_agent(adv_state)
+                    action = adv_action_fromState.detach().cpu().numpy()
+                elif args.algo == 'drl':
+                    adv_action_fromState, _, _ = trained_agent(adv_state)
+                    action = adv_action_fromState.detach().cpu().numpy()
+                elif args.algo == 'SAC_lag':
+                    _, _, adv_action_fromState = trained_agent.sample(adv_state)
+                    action = adv_action_fromState.detach().cpu().numpy()
+                else:
+                    if isinstance(adv_state, th.Tensor):
+                        adv_state = adv_state.detach().cpu().numpy()
+                    adv_action_fromState, _ = trained_agent.predict(adv_state, deterministic=True)
+                    action = adv_action_fromState
+                print(episode_steps, 'attack', '{} action is'.format(args.attack_method), adv_action_fromState)
+
+            obs, reward, done, T, info = env.step(action)
         else:
-            # advmodel_path = "./logs/adv_eval/" + os.path.join(args.adv_algo, args.env_name, args.algo, args.addition_msg, 'lunar')
-            adv_model_path = os.path.join(args.adv_path, args.env_name, args.adv_algo, 'attacker', args.adv_algo_name)
+            # print("state: ", obs_tensor)
+            speed_list.append(obs[-2])
+            with th.no_grad():
+                if args.algo in ('FNI', 'DARRL'):
+                    actions, std, _action = trained_agent(obs_tensor)
+                    actions = actions.cpu().detach().numpy()
+                elif args.algo == 'IL':
+                    actions = trained_agent(obs_tensor)
+                    actions = actions.cpu().detach().numpy()
+                elif args.algo == 'drl':
+                    actions, _, _ = trained_agent(obs_tensor)
+                    actions = actions.cpu().detach().numpy()
+                elif args.algo == 'SAC_lag':
+                    _, _, actions = trained_agent.sample(obs_tensor)
+                else:
+                    actions, _ = trained_agent.predict(obs, deterministic=True)
+            print('action is ', actions)
+            obs, reward, done, T, info = env.step(actions)
+        episode_reward += reward
+        episode_steps += 1
+        if done:
+            ct += 1
+            break
+    xa = info['x_position']
+    ya = info['y_position']
+    if args.env_name == 'TrafficEnv1-v0' or args.env_name == 'TrafficEnv3-v1' or args.env_name == 'TrafficEnv6-v0':
+        if xa < -50.0 and ya > 4.0 and done is False:
+            sn += 1
+    elif args.env_name == 'TrafficEnv2-v0':
+        if xa > 50.0 and ya > -5.0 and done is False:
+            sn += 1
+    elif args.env_name == 'TrafficEnv4-v0':
+        if ya < -50.0 and done is False:
+            sn += 1
+    elif args.env_name == 'TrafficEnv8-v0':
+        if ya == 10.0 and done is False:
+            sn += 1
+    rewards.append(episode_reward)
+    steps.append(episode_steps)
 
-        model = ActorNet_adv(state_dim=26, action_dim=1).to(device)
-        model.load_state_dict(torch.load(adv_model_path, map_location=device))
-        model.eval()
+# 计算平均奖励和步数
+mean_reward = np.mean(rewards)
+std_reward = np.std(rewards)
+mean_steps = np.mean(steps)
+std_steps = np.std(steps)
 
+# 计算碰撞率
+cr = ct / args.train_step * 100
+sr = sn / args.train_step * 100
 
-    # 加载训练好的自动驾驶模型
-    if args.best_model:
-        model_path = os.path.join(args.age_path, args.env_name, args.algo, 'best_model/best_model')
-    else:
-        model_path = os.path.join(args.age_path, args.env_name, args.algo, 'defender', 'lunar_baseline')
-        print('**********************************************************')
+# 计算平均速度
+mean_speed = np.mean(speed_list)
+std_speed = np.std(speed_list)
 
-    if args.algo == 'PPO':
-        print('*******************algo is PPO*******************')
-        trained_agent = PPO.load(model_path, device=device)
-    elif args.algo == 'SAC':
-        print('*******************algo is SAC*******************')
-        trained_agent = SAC.load(model_path, device=device)
-    elif args.algo == 'SAC_lag':
-        print('*******************algo is SAC_lag*******************')
-        trained_agent = SAC_lag_Net(26, 1)
-        state_dict = torch.load(model_path+".pt", map_location=device)
-        trained_agent.load_state_dict(state_dict)
-        trained_agent.eval()
-        trained_agent.to(device)  # 再次确保
-    # elif args.algo == 'TD3':
-    #     print('*******************algo is TD3*******************')
-    #     trained_agent = TD3.load(model_path, device=device)
-    elif args.algo == 'drl':
-        print('*******************algo is drl*******************')
-        model_path_drl = os.path.join(args.age_path, args.env_name, args.algo, 'defender', args.algo_name)
-        trained_agent = ActorNet(state_dim=26, action_dim=1).to(device)
-        trained_agent.load_state_dict(torch.load(model_path_drl, map_location=device))
-        trained_agent.eval()
-    #
-    # elif args.algo == 'DARRL':
-    #     trained_agent = ActorNet(26,1)
-    #     model_path_drl = os.path.join(args.age_path, args.env_name, args.algo, 'defender', 'policy2000_actor_38.pth')
-    #     state_dict = torch.load(model_path_drl, map_location=device)
-    #     trained_agent.load_state_dict(state_dict)
-    #     trained_agent.eval()
-    elif args.algo == "FNI":
-        trained_agent = FniNet(26, 1)
-        score = f"policy_v{411}"
-        model_path_drl = os.path.join('models', args.env_name, args.algo, 'defender', score) + '.pth'
-        state_dict = torch.load(model_path_drl, map_location=device)
-        trained_agent.load_state_dict(state_dict)
-        trained_agent.eval()
-        trained_agent.to(device)  # 再次确保
+# 计算平均攻击次数
+# attack_list = [x for x in attack_count_list if x != 0]
+# mean_attack_times = np.mean(attack_list)
+# std_attack_times = np.std(attack_list)
 
-    # 进行验证
-    rewards = []
-    steps = []
+# 计算单次攻击的收益
+# mean_attack_reward = np.mean(mean_attack_reward_list)
+# std_attack_reward = np.std(mean_attack_reward_list)
 
-    maxSpeed = 15.0
-    ct = 0
-    sn = 0
-    sat = 0
-    speed_list = []
-    attack_count_list = []
-    mean_attack_reward_list = []
-    for episode in range(args.train_step):
-        obs, info = env.reset(options="seed")#
-        speed = 0
-        episode_reward = 0
-        episode_steps = 0
-        for _ in range(args.T_horizon):
-            obs_tensor = obs_as_tensor(obs, device)
-            # print("扰动前的状态：", obs_tensor)
-            if args.attack:
-                speed_list.append(obs[-2])
-                with th.no_grad():
-                    if args.algo in ('FNI', 'DARRL'):
-                        actions, std, _action = trained_agent(obs_tensor)
-                        actions = actions.detach().cpu().numpy()
-                    elif args.algo == 'IL':
-                        actions = trained_agent(obs_tensor[:-2])
-                        actions = actions.detach().cpu().numpy()
-                    elif args.algo == 'drl':
-                        actions, _, _ = trained_agent(obs_tensor)
-                    elif args.algo == 'SAC_lag':
-                        _, _, actions = trained_agent.sample(obs_tensor)
-                    else:
-                        actions, _ = trained_agent.predict(obs, deterministic=True)
+# print('attack lists ', attack_count_list, 'attack times ', len(attack_list))
+print(f"Mean reward: {mean_reward:.2f} +/- {std_reward:.2f}")
+print(f"Mean steps: {mean_steps:.2f} +/- {std_steps:.2f}")
+print(f"Mean speed: {mean_speed * maxSpeed:.2f} +/- {std_speed * maxSpeed:.2f}")
+# print(f"Mean attack times: {mean_attack_times:.2f} +/- {std_attack_times:.2f}")
+print(f"Collision rate: {cr:.2f}")
+print(f"Success rate: {sr:.2f}")
+# print(f"Success attack rate: {asr:.2f}")
+# print(f"Reward per attack: {mean_attack_reward:.2f} +/- {std_attack_reward:.2f}")
 
-                    if isinstance(actions, np.ndarray):
-                        # 假设 action 是一个标量数组，比如 array([0])，用 item() 取标量
-                        actions_tensor = th.tensor(actions, device=obs_tensor.device)
-                    elif isinstance(actions, torch.Tensor):
-                        actions_tensor = actions
-                    adv_actions, _, _  = model(obs_tensor)
-                print(episode_steps, 'attack', 'Victim action is', actions, 'adv actions is', adv_actions)
+# 定义日志文件路径
+log_file = "eval_attack_log_ser.txt"
 
-                if args.attack_method == 'fgsm':
-                    if args.algo == 'drl' or args.algo == 'DARRL' or args.algo == 'SAC_lag' or args.algo == 'FNI':
-                        # print("states: ", obs_tensor)
-                        adv_state = FGSM_vdarrl(adv_actions, victim_agent=trained_agent,last_state=obs_tensor,
-                                                algo=args.algo, epsilon=args.epsilon, device=args.device)
-                        # print("adv_states: ", adv_state)
-                    else:
-                        adv_state = FGSM_v2(adv_actions, victim_agent=trained_agent, last_state=obs_tensor,
-                                            epsilon=args.epsilon, device=args.device)
+# 将参数和结果写入日志文件
+with open(log_file, 'a') as f:  # 使用 'a' 模式以追加方式写入文件
+    # 写入参数
+    f.write("Parameters:\n")
+    for arg in vars(args):  # 遍历 args 中的所有参数
+        f.write(f"{arg}: {getattr(args, arg)}\n")
 
-                with th.no_grad():
-                    if args.algo in ('FNI', 'DARRL'):
-                        adv_action_fromState, _, _ = trained_agent(adv_state)
-                        action = adv_action_fromState.detach().cpu().numpy()
-                    elif args.algo == 'drl':
-                        adv_action_fromState, _, _ = trained_agent(adv_state)
-                        action = adv_action_fromState.detach().cpu().numpy()
-                    elif args.algo == 'SAC_lag':
-                        _, _, adv_action_fromState = trained_agent.sample(adv_state)
-                        action = adv_action_fromState.detach().cpu().numpy()
-                    else:
-                        if isinstance(adv_state, th.Tensor):
-                            adv_state = adv_state.detach().cpu().numpy()
-                        adv_action_fromState, _ = trained_agent.predict(adv_state, deterministic=True)
-                        action = adv_action_fromState
-                    print(episode_steps, 'attack', '{} action is'.format(args.attack_method), adv_action_fromState)
-
-                obs, reward, done, T, info = env.step(action)
-            else:
-                # print("state: ", obs_tensor)
-                speed_list.append(obs[-2])
-                with th.no_grad():
-                    if args.algo in ('FNI', 'DARRL'):
-                        actions, std, _action = trained_agent(obs_tensor)
-                        actions = actions.cpu().detach().numpy()
-                    elif args.algo == 'IL':
-                        actions = trained_agent(obs_tensor)
-                        actions = actions.cpu().detach().numpy()
-                    elif args.algo == 'drl':
-                        actions, _, _ = trained_agent(obs_tensor)
-                        actions = actions.cpu().detach().numpy()
-                    elif args.algo == 'SAC_lag':
-                        _, _, actions = trained_agent.sample(obs_tensor)
-                    else:
-                        actions, _ = trained_agent.predict(obs, deterministic=True)
-                print('action is ', actions)
-                obs, reward, done, T, info = env.step(actions)
-            episode_reward += reward
-            episode_steps += 1
-            if done:
-                ct += 1
-                break
-        xa = info['x_position']
-        ya = info['y_position']
-        if args.env_name == 'TrafficEnv1-v0' or args.env_name == 'TrafficEnv3-v1' or args.env_name == 'TrafficEnv6-v0':
-            if xa < -50.0 and ya > 4.0 and done is False:
-                sn += 1
-        elif args.env_name == 'TrafficEnv2-v0':
-            if xa > 50.0 and ya > -5.0 and done is False:
-                sn += 1
-        elif args.env_name == 'TrafficEnv4-v0':
-            if ya < -50.0 and done is False:
-                sn += 1
-        elif args.env_name == 'TrafficEnv8-v0':
-            if ya == 10.0 and done is False:
-                sn += 1
-        rewards.append(episode_reward)
-        steps.append(episode_steps)
-
-    # 计算平均奖励和步数
-    mean_reward = np.mean(rewards)
-    std_reward = np.std(rewards)
-    mean_steps = np.mean(steps)
-    std_steps = np.std(steps)
-
-    # 计算碰撞率
-    cr = ct / args.train_step * 100
-    sr = sn / args.train_step * 100
-
-    # 计算平均速度
-    mean_speed = np.mean(speed_list)
-    std_speed = np.std(speed_list)
-
-    # 计算平均攻击次数
-    # attack_list = [x for x in attack_count_list if x != 0]
-    # mean_attack_times = np.mean(attack_list)
-    # std_attack_times = np.std(attack_list)
-
-    # 计算单次攻击的收益
-    # mean_attack_reward = np.mean(mean_attack_reward_list)
-    # std_attack_reward = np.std(mean_attack_reward_list)
-
-    # print('attack lists ', attack_count_list, 'attack times ', len(attack_list))
-    print(f"Mean reward: {mean_reward:.2f} +/- {std_reward:.2f}")
-    print(f"Mean steps: {mean_steps:.2f} +/- {std_steps:.2f}")
-    print(f"Mean speed: {mean_speed * maxSpeed:.2f} +/- {std_speed * maxSpeed:.2f}")
-    # print(f"Mean attack times: {mean_attack_times:.2f} +/- {std_attack_times:.2f}")
-    print(f"Collision rate: {cr:.2f}")
-    print(f"Success rate: {sr:.2f}")
-    # print(f"Success attack rate: {asr:.2f}")
-    # print(f"Reward per attack: {mean_attack_reward:.2f} +/- {std_attack_reward:.2f}")
-
-    # 定义日志文件路径
-    log_file = "eval_attack_log_ser.txt"
-
-    # 将参数和结果写入日志文件
-    with open(log_file, 'a') as f:  # 使用 'a' 模式以追加方式写入文件
-        # 写入参数
-        f.write("Parameters:\n")
-        for arg in vars(args):  # 遍历 args 中的所有参数
-            f.write(f"{arg}: {getattr(args, arg)}\n")
-
-        # 写入结果
-        f.write("\nResults:\n")
-        f.write(f"Mean reward: {mean_reward:.2f} +/- {std_reward:.2f}\n")
-        f.write(f"Mean steps: {mean_steps:.2f} +/- {std_steps:.2f}\n")
-        f.write(f"Mean speed: {mean_speed * maxSpeed:.2f} +/- {std_speed * maxSpeed:.2f}\n")
-        # f.write(f"Mean attack times: {mean_attack_times:.2f} +/- {std_attack_times:.2f}\n")
-        f.write(f"Collision rate: {cr:.2f}\n")
-        f.write(f"Success rate: {sr:.2f}\n")
-        # f.write(f"Success attack rate: {asr:.2f}\n")
-        # f.write(f"Reward per attack: {mean_attack_reward:.2f} +/- {std_attack_reward:.2f}\n")
-        f.write("-" * 50 + "\n")
+    # 写入结果
+    f.write("\nResults:\n")
+    f.write(f"Mean reward: {mean_reward:.2f} +/- {std_reward:.2f}\n")
+    f.write(f"Mean steps: {mean_steps:.2f} +/- {std_steps:.2f}\n")
+    f.write(f"Mean speed: {mean_speed * maxSpeed:.2f} +/- {std_speed * maxSpeed:.2f}\n")
+    # f.write(f"Mean attack times: {mean_attack_times:.2f} +/- {std_attack_times:.2f}\n")
+    f.write(f"Collision rate: {cr:.2f}\n")
+    f.write(f"Success rate: {sr:.2f}\n")
+    # f.write(f"Success attack rate: {asr:.2f}\n")
+    # f.write(f"Reward per attack: {mean_attack_reward:.2f} +/- {std_attack_reward:.2f}\n")
+    f.write("-" * 50 + "\n")
 

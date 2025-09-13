@@ -9,6 +9,7 @@ def get_config():
     parser.add_argument('--algo', default="drl", help='name of the alg')
     parser.add_argument('--seed', type=int, default=4)
     parser.add_argument('--train_step', type=int, default=12)
+    parser.add_argument('--train_step_per_iteration', type=int, default=100, help='number of training steps per iteration')
 
     parser.add_argument('--T_horizon', default=30)
     parser.add_argument('--print_interval', default=10)
@@ -37,5 +38,7 @@ def get_config():
     parser.add_argument('--model_name', default="264_18", help='训练攻击者时使用的防御者模型')
     parser.add_argument('--method', default="m1", help='防御者约束方法')
     parser.add_argument('--attack_option', default="a2", help='攻击方法')
+
+    parser.add_argument('--best_model', action='store_true', help='是否加载训练过程中表现最好的防御者模型')
 
     return parser
