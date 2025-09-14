@@ -131,7 +131,6 @@ def train():
     sn_epi = []
 
     attacker_flag = False
-    init_flag = True
 
     for n_epi in range(args.train_step):
         state, _ = env.reset()
@@ -145,8 +144,7 @@ def train():
                         attacker_flag = False
                     else:
                         attacker_flag = True
-                model_t.update(attacker_flag, init_flag)
-                init_flag = False
+                model_t.update(attacker_flag)
 
             if args.attacker:
                 with torch.no_grad():

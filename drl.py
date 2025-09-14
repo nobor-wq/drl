@@ -342,62 +342,6 @@ class DRL:
         self.soft_target_update(self.critic2, self.critic2_target)
 
 
-    def update_defender_init(self, states, states_adv, next_states, actions, dones, rewards):
-        with torch.no_grad():
-            _, _, next_pi = self.actor(next_states)
-        q1 = self.critic1(states_adv, actions).squeeze(-1)
-        q2 = self.critic2(states_adv, actions).squeeze(-1)
-
-        min_q_next_pi = torch.min(self.critic1_target(next_states, next_pi),
-                                  self.critic2_target(next_states, next_pi)).squeeze(-1).to(self.device)
-
-        v_backup = min_q_next_pi
-        q_backup = rewards + self.gamma * (1 - dones) * v_backup
-        q_backup = q_backup.to(self.device)
-
-        qf1_loss = F.mse_loss(q1, q_backup.detach())
-        qf2_loss = F.mse_loss(q2, q_backup.detach())
-
-        # Update two Q network parameter
-        self.critic1_optimizer.zero_grad()
-        qf1_loss.backward()
-        self.critic1_optimizer.step()
-
-        self.critic2_optimizer.zero_grad()
-        qf2_loss.backward()
-        self.critic2_optimizer.step()
-
-        # 2025-07-26 wq actor
-
-        if args.get:
-            with torch.no_grad():
-                action_adv, _, _ = self.actor_adv(states)
-            states_fgsm = FGSM_vdarrl(action_adv, self.actor,
-                                    states, algo=args.algo,
-                                    epsilon=args.epsilon, device=args.device,
-                                      attack_option=args.attack_option)
-            mu_adv, std, pi_adv = self.actor(states_fgsm)
-
-        mu, std, pi = self.actor(states_adv)
-        # Actor loss
-        min_q_pi = torch.min(self.critic1(states_adv, pi),
-                             self.critic2(states_adv, pi)).squeeze(-1).to(self.device)
-
-        actor_loss = (-min_q_pi).mean()
-        # Update actor network parameter
-        self.actor_optimizer.zero_grad()
-        actor_loss.backward()
-        self.actor_optimizer.step()
-
-        # 2025-07-27 wq 记录
-        if args.swanlab:
-            actor_loss_val = -actor_loss.detach().cpu().item()
-            swanlab.log({"loss/agent_loss": actor_loss_val})
-
-        # Polyak averaging for target parameter
-        self.soft_target_update(self.critic1, self.critic1_target)
-        self.soft_target_update(self.critic2, self.critic2_target)
-
     def update_attacker(self, states, next_states, actions, dones, costs):
         with torch.no_grad():
             _, next_log_prob, next_pi = self.actor_adv(next_states)
@@ -476,7 +420,7 @@ class DRL:
 
 
 
-    def update(self, attacker_flag, init_flag):
+    def update(self, attacker_flag):
         batch = self.replay_buffer.sample(self.batch_size)
 
         states = batch['states']
@@ -495,10 +439,7 @@ class DRL:
                 if attacker_flag:
                     self.update_attacker(states, next_states, actions_adv, dones, costs)
                 else:
-                    if init_flag:
-                        self.update_defender_init(states, states_adv, next_states, actions, dones, rewards)
-                    else:
-                        self.update_defender(states, states_adv, next_states, actions, dones, rewards)
+                    self.update_defender(states, states_adv, next_states, actions, dones, rewards)
             else:
                 self.update_attacker(states, next_states, actions, dones, costs)
                 self.update_defender(states, states_adv, next_states, actions, dones, rewards)
