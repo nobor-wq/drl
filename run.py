@@ -185,11 +185,12 @@ def train():
                         _, _, action = model_t.actor(state_tensor)
                 else:
                     with torch.no_grad():
-                        if attacker_flag:
-                        # _, _, action_before_attack = model_t.actor(state_tensor)
-                            _, _, action_adv  = model_t.actor_adv(state_tensor)
-                        else:
-                            action_adv, _, _ = model_t.actor_adv(state_tensor)
+                        # if attacker_flag:
+                        # # _, _, action_before_attack = model_t.actor(state_tensor)
+                        #     _, _, action_adv  = model_t.actor_adv(state_tensor)
+                        # else:
+                        #     action_adv, _, _ = model_t.actor_adv(state_tensor)
+                        _, _, action_adv = model_t.actor_adv(state_tensor)
 
                     state_adv = FGSM_vdarrl(action_adv, model_t.actor,
                                 state_tensor, algo=args.algo,
@@ -197,10 +198,11 @@ def train():
                                 attack_option=args.attack_option)
 
                     with torch.no_grad():
-                        if attacker_flag:
-                            ego_action_attack, _, _ = model_t.actor(state_adv)
-                        else:
-                            _, _, ego_action_attack = model_t.actor(state_adv)
+                        # if attacker_flag:
+                        #     ego_action_attack, _, _ = model_t.actor(state_adv)
+                        # else:
+                        #     _, _, ego_action_attack = model_t.actor(state_adv)
+                        _, _, ego_action_attack = model_t.actor(state_adv)
                         action = ego_action_attack
 
             next_state, reward, done, _, info = env.step(action)
