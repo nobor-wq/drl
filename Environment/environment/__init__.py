@@ -8,6 +8,12 @@ register(id='TrafficEnv3-v0', entry_point='Environment.environment.env3.traffic_
 
 register(id='TrafficEnv3-v1', entry_point='Environment.environment.env3-1.traffic_env:Traffic_Env')
 
+register(id='TrafficEnv3-v2', entry_point='Environment.environment.env3-2.traffic_env:Traffic_Env')
+
+register(id='TrafficEnv3-v3', entry_point='Environment.environment.env3-3.traffic_env:Traffic_Env')
+
+register(id='TrafficEnv3-visual', entry_point='Environment.environment.env3-visual.traffic_env:Traffic_Env')
+
 register(id='TrafficEnv4-v0', entry_point='Environment.environment.env4.traffic_env:Traffic_Env')
 
 register(id='TrafficEnv5-v0', entry_point='Environment.environment.env5.traffic_env:Traffic_Env')

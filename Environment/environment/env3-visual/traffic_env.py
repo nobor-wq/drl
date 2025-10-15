@@ -8,6 +8,8 @@ import sys
 import math
 from gymnasium import spaces
 import time
+from PIL import Image
+
 
 # we need to import python modules from the $SUMO_HOME/tools directory
 try:
@@ -22,17 +24,15 @@ except ImportError:
 
 import traci
 
-gui = True
-if gui:
-    sumoBinary = checkBinary('sumo-gui')
-else:
-    sumoBinary = checkBinary('sumo')
-config_path = os.path.dirname(__file__)+"/../../../Environment/environment/env3-1/Intersection_3.sumocfg"  # Unprotected left turn in mixed traffic
+config_path = os.path.dirname(__file__)+"/../../../Environment/environment/env3-visual/Intersection_3.sumocfg"  # Unprotected left turn in mixed traffic
 
 LIBSUMO = "LIBSUMO_AS_TRACI" in os.environ
 
 
 class Traffic_Env(gym.Env):
+    metadata = {
+        "render_modes": ["human", "rgb_array"],
+    }
     CONNECTION_LABEL = 0  # For traci multi-client support
     def __init__(self, attack=False, adv_steps=2, eval=False):
         self.state_dim = 26
@@ -62,6 +62,11 @@ class Traffic_Env(gym.Env):
         self.action_space = spaces.Box(-1.0, 1.0, shape=(1,), dtype=np.float32)
         # define dims of state space
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(26,), dtype=np.float32)
+
+        self.render_mode = 'rgb_array'
+        self.sumo_binary = checkBinary('sumo-gui')
+        self.virtual_display = (1500, 1000)
+        self.disp = None
 
     def raw_obs(self, vehicle_params):
 
@@ -219,12 +224,14 @@ class Traffic_Env(gym.Env):
 
     def reset(self, seed=None, options=None):
         self.attack_remain = self.adv_steps
-        if options is None:
-            if self.reset_times % 2 == 0:
-                self.sumo_seed = "%d" % self.reset_times
-        else:
-            self.sumo_seed = 100000 + self.reset_times
-            # self.sumo_seed = 'random'
+        # if options is None:
+        #     if self.reset_times % 2 == 0:
+        #         self.sumo_seed = "%d" % self.reset_times
+        # else:
+        #     # self.sumo_seed = 100000 + self.reset_times
+        #     self.sumo_seed = 'random'
+        if seed:
+            self.sumo_seed = seed
         self.start()
 
         # traci.load(["-c", config_path])
@@ -251,44 +258,46 @@ class Traffic_Env(gym.Env):
     def close(self):
         traci.close()
 
+    def render(self):
+        """Render the environment.
 
+        If render_mode is "human", the environment will be rendered in a GUI window using pyvirtualdisplay.
+        """
+        if self.render_mode == "human":
+            return None
+        elif self.render_mode == "rgb_array":
+            # get position of AutoCar
+            x, y = traci.vehicle.getPosition(self.AutoCarID)
+            # 设置偏移量和缩放级别来锁定视图
+            traci.gui.setZoom("View #0", 1500)  # 设置缩放级别
+            traci.gui.setOffset("View #0", x, y)  # 设置视图的偏移量（锁定到车辆位置）
+            traci.gui.setSchema("View #0", "real world")
+            # img = self.sumo.gui.screenshot(traci.gui.DEFAULT_VIEW,
+            #                          f"temp/img{self.sim_step}.jpg",
+            #                          width=self.virtual_display[0],
+            #                          height=self.virtual_display[1])
+            img = self.disp.grab()
+            return np.array(img)
+        else:
+            return None
 
-    # def start(self, gui=False):
-        # # t0 = time.perf_counter()
-        # sumoBinary = checkBinary('sumo-gui') if gui else checkBinary('sumo')
-        # # t1 = time.perf_counter()
-        # # print(f"[Profiling] checkBinary 耗时: {t1 - t0:.3f}s")
-        #
-        # sumo_cmd = [sumoBinary, "-c", config_path, "--collision.check-junctions", "true"]
-        # t2 = time.perf_counter()
-        # print(f"[Profiling] 构造命令列表耗时: {t2 - t1:.3f}s")
-        #
-        # try:
-        #     traci.close()
-        # except:
-        #     pass
-        # t3 = time.perf_counter()
-        # print(f"[Profiling] traci.close() 耗时: {t3 - t2:.3f}s")
-        #
-        # # … 同理给 append/extend、条件分支也打点 …
-        #
-        # t4 = time.perf_counter()
-        # if LIBSUMO:
-        #     traci.start(sumo_cmd)
-        # else:
-        #     traci.start(sumo_cmd, label=self.label)
-        # t5 = time.perf_counter()
-        # print(f"[Profiling] traci.start() 耗时: {t5 - t4:.3f}s")
-
-        # 后面如果紧接着是模拟步进，也可以继续打点
-
-    def start(self, gui=False):
+    def start(self, gui=True):
         sumoBinary = checkBinary('sumo-gui') if gui else checkBinary('sumo')
         sumo_cmd = [sumoBinary, "-c", config_path, "--collision.check-junctions", "true"]
         try:
             traci.close()
         except:
             pass  # 如果没有活跃的连接，忽略异常
+
+        sumo_cmd.extend(["--start", "--quit-on-end"])
+        if self.render_mode == "rgb_array":
+            sumo_cmd.extend(["--window-size", f"{self.virtual_display[0]},{self.virtual_display[1]}"])
+            from pyvirtualdisplay.smartdisplay import SmartDisplay
+
+            print("Creating a virtual display.")
+            self.disp = SmartDisplay(size=self.virtual_display)
+            self.disp.start()
+            print("Virtual display started.")
 
         if self.sumo_seed == "random":
             sumo_cmd.append("--random")
@@ -299,6 +308,9 @@ class Traffic_Env(gym.Env):
         else:
             traci.start(sumo_cmd, label=self.label)
             # traci.start(sumo_cmd)
+        traci.gui.DEFAULT_VIEW = "View #0"
+        traci.gui.setSchema(traci.gui.DEFAULT_VIEW, "real world")
+
 
     def get_obs(self):
         return self.obs

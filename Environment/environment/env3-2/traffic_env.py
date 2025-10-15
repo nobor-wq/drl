@@ -27,7 +27,7 @@ if gui:
     sumoBinary = checkBinary('sumo-gui')
 else:
     sumoBinary = checkBinary('sumo')
-config_path = os.path.dirname(__file__)+"/../../../Environment/environment/env3-1/Intersection_3.sumocfg"  # Unprotected left turn in mixed traffic
+config_path = os.path.dirname(__file__)+"/../../../Environment/environment/env3-2/Intersection_3.sumocfg"  # Unprotected left turn in mixed traffic
 
 LIBSUMO = "LIBSUMO_AS_TRACI" in os.environ
 
@@ -223,8 +223,8 @@ class Traffic_Env(gym.Env):
             if self.reset_times % 2 == 0:
                 self.sumo_seed = "%d" % self.reset_times
         else:
-            self.sumo_seed = 100000 + self.reset_times
-            # self.sumo_seed = 'random'
+            # self.sumo_seed = 100000 + self.reset_times
+            self.sumo_seed = 'random'
         self.start()
 
         # traci.load(["-c", config_path])
