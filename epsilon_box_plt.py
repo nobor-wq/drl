@@ -189,10 +189,27 @@ for s_idx, s_0_raw in enumerate(tqdm(s_0_list)):
             print(f"Error processing {algo_name}: {e}")
 
 # --- 4. 汇总数据并绘图 ---
+ALGOS_TO_COMPARE_NEW = ['PPO', 'SAC', 'TD3', 'SAC_Lag', 'FNI', 'DARRL', 'IGCARL (Ours)']
 if not all_results:
     print("No data was generated. Cannot create plot.")
 else:
     df_results = pd.DataFrame(all_results)
+    df_results['algo'] = df_results['algo'].replace({'IGCARL': 'IGCARL (Ours)'})
+    offset_summary = df_results.groupby('algo')['offset'].agg(
+        min_offset='min',
+        max_offset='max'
+    )
+
+    # 2. 计算最大偏移范围 (max - min)
+    offset_summary['max_offset_range'] = offset_summary['max_offset'] - offset_summary['min_offset']
+
+    # 3. 对结果进行排序，使其与图表顺序一致
+    offset_summary = offset_summary.loc[ALGOS_TO_COMPARE_NEW]
+
+    # 4. 打印计算结果
+    print("--- Algorithm Offset Analysis ---")
+    print(offset_summary)
+    print("---------------------------------")
 
     sns.set(style="whitegrid", font_scale=1.2)
     fig, ax = plt.subplots(figsize=(8, 6))
@@ -225,7 +242,7 @@ else:
         data=df_results,
         x='algo',
         y='offset',
-        order=ALGOS_TO_COMPARE,  # 保持与之前一致的顺序
+        order=ALGOS_TO_COMPARE_NEW,  # 保持与之前一致的顺序
         ax=ax,
         palette='muted',
         hue='algo',  # Assign 'algo' to hue
@@ -271,6 +288,17 @@ else:
     ax.set_ylabel('Action Offset from Clean Observation')
     ax.tick_params(axis='x', rotation=45)
     # ax.legend(loc='lower right')
+    # 1. 获取所有的X轴标签对象列表
+    xtick_labels = ax.get_xticklabels()
+
+    # 2. 检查列表是否为空，以防万一
+    if xtick_labels:
+        # 3. 获取最后一个标签对象
+        last_label = xtick_labels[-1]
+
+        # 4. 设置其属性
+        last_label.set_color('red')
+        last_label.set_fontweight('bold')
 
     plt.tight_layout()
     plt.savefig('action_violin_plot.pdf', bbox_inches='tight')
